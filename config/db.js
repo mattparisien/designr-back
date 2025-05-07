@@ -8,7 +8,7 @@ let dbInstanceForStorage; // To store the native db instance for GridFsStorage
 
 // Create a promise that resolves after attempting to connect to MongoDB and set up GridFS components
 const dbInitializationPromise = mongoose.connect(process.env.MONGODB_URI)
-  .then(mongooseConnection => {
+  .then(mongooseConnection => { 
     // Check if the connection object and its critical properties are valid
     if (!mongooseConnection || !mongooseConnection.connection) {
       console.error('Mongoose connection object is invalid after connect attempt.');
