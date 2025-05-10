@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 
 // Now require modules that need environment variables
 const { connectDB } = require('./config/db'); // Import connectDB from db.js
@@ -29,17 +30,24 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(morgan('dev'));
 
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Import routes
 const designRoutes = require('./routes/designs');
 const authRoutes = require('./routes/auth');
 const presentationRoutes = require('./routes/presentations');
 const userRoutes = require('./routes/userRoutes'); // Import user routes
+const folderRoutes = require('./routes/folders');
+const assetRoutes = require('./routes/assets');
 
 // Routes
 app.use('/api/designs', designRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/presentations', presentationRoutes);
 app.use('/api/users', userRoutes); // Use user routes
+app.use('/api/folders', folderRoutes);
+app.use('/api/assets', assetRoutes);
 
 // Base route
 app.get('/', (req, res) => {
