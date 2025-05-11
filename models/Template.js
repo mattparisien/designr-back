@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// Define the schema for individual elements in a design
+// Define the schema for individual elements in a template
 const ElementSchema = new mongoose.Schema({
   id: { type: String, required: true },
   type: { type: String, required: true }, // text, image, shape, etc.
@@ -31,7 +31,7 @@ const ElementSchema = new mongoose.Schema({
   zIndex: { type: Number },
 }, { _id: false }); // Don't generate MongoDB _id for nested elements
 
-// Define the schema for pages/artboards in a design
+// Define the schema for pages/artboards in a template
 const PageSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String },
@@ -48,8 +48,8 @@ const PageSchema = new mongoose.Schema({
   }
 }, { _id: false }); // Don't generate MongoDB _id for nested pages
 
-// Main design schema
-const DesignSchema = new mongoose.Schema({
+// Main template schema
+const TemplateSchema = new mongoose.Schema({
   title: {
     type: String,
     required: true,
@@ -64,30 +64,31 @@ const DesignSchema = new mongoose.Schema({
     enum: ['presentation', 'social', 'print', 'custom'],
     default: 'custom'
   },
-  userId: {
+  category: {
     type: String,
     required: true
   },
   thumbnail: {
     type: String
   },
-  category: {
+  previewImages: [{
     type: String
-  },
+  }],
   tags: [{
     type: String
   }],
-  starred: {
+  author: {
+    type: String, // User ID of the creator
+    required: true
+  },
+  featured: {
     type: Boolean,
     default: false
   },
-  shared: {
+  popular: {
     type: Boolean,
     default: false
   },
-  sharedWith: [{
-    type: String
-  }],
   pages: [PageSchema],
   canvasSize: {
     name: { type: String },
@@ -101,4 +102,4 @@ const DesignSchema = new mongoose.Schema({
   timestamps: true, // Automatically add createdAt and updatedAt fields
 });
 
-module.exports = mongoose.model('Design', DesignSchema);
+module.exports = mongoose.model('Template', TemplateSchema);

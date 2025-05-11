@@ -85,6 +85,10 @@ const ProjectSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isTemplate: {
+    type: Boolean,
+    default: false
+  },
   sharedWith: [{
     type: String
   }],

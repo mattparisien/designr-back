@@ -3,7 +3,7 @@ const Project = require('../models/Project');
 // Get all projects (with optional filtering)
 exports.getProjects = async (req, res) => {
   try {
-    const { userId, starred, category, type } = req.query;
+    const { userId, starred, category, type, isTemplate } = req.query;
     
     // Build filter object based on query params
     const filter = {};
@@ -11,9 +11,10 @@ exports.getProjects = async (req, res) => {
     if (starred) filter.starred = starred === 'true';
     if (category) filter.category = category;
     if (type) filter.type = type;
+    if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
     
     const projects = await Project.find(filter)
-      .select('title type userId thumbnail category starred shared createdAt updatedAt')
+      .select('title type userId thumbnail category starred shared isTemplate createdAt updatedAt')
       .sort({ updatedAt: -1 });
       
     res.status(200).json(projects);
@@ -155,6 +156,7 @@ exports.cloneProject = async (req, res) => {
     projectData.title = `${projectData.title} (Copy)`;
     projectData.shared = false;
     projectData.starred = false;
+    projectData.isTemplate = false; // Ensure cloned templates become regular projects
     
     const newProject = new Project(projectData);
     const savedProject = await newProject.save();
@@ -163,5 +165,63 @@ exports.cloneProject = async (req, res) => {
   } catch (error) {
     console.error('Error cloning project:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get all templates
+exports.getTemplates = async (req, res) => {
+  try {
+    const { category, type } = req.query;
+    
+    // Build filter object based on query params
+    const filter = { isTemplate: true };
+    if (category) filter.category = category;
+    if (type) filter.type = type;
+    
+    const templates = await Project.find(filter)
+      .select('title type userId thumbnail category isTemplate createdAt updatedAt')
+      .sort({ updatedAt: -1 });
+      
+    res.status(200).json(templates);
+  } catch (error) {
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Convert project to template or vice versa
+exports.toggleTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isTemplate } = req.body;
+    
+    if (isTemplate === undefined) {
+      return res.status(400).json({ message: 'isTemplate field is required' });
+    }
+    
+    let project;
+    
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      project = await Project.findByIdAndUpdate(
+        id, 
+        { isTemplate }, 
+        { new: true, runValidators: true }
+      );
+    } else {
+      project = await Project.findOneAndUpdate(
+        { $or: [{ _id: id }, { 'pages.id': id }] },
+        { isTemplate },
+        { new: true, runValidators: true }
+      );
+    }
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    res.status(200).json(project);
+  } catch (error) {
+    console.error('Error updating project template status:', error);
+    res.status(400).json({ message: 'Failed to update project', error: error.message });
   }
 };

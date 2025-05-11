@@ -40,6 +40,7 @@ const presentationRoutes = require('./routes/presentations');
 const userRoutes = require('./routes/userRoutes'); // Import user routes
 const folderRoutes = require('./routes/folders');
 const assetRoutes = require('./routes/assets');
+const templateRoutes = require('./routes/templates'); // Import template routes
 
 // Routes
 app.use('/api/projects', projectRoutes);
@@ -48,12 +49,12 @@ app.use('/api/presentations', presentationRoutes);
 app.use('/api/users', userRoutes); // Use user routes
 app.use('/api/folders', folderRoutes);
 app.use('/api/assets', assetRoutes);
+app.use('/api/templates', templateRoutes); // Use template routes
 
 // Base route
 app.get('/', (req, res) => {
   res.send('Canva Clone API is running');
 });
-
 
 // Connect to MongoDB and initialize GridFS
 connectDB() // Use connectDB from db.js
