@@ -25,7 +25,7 @@ const corsOptions = {
   credentials: true
 };
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '50mb' })); // Increased limit for large design data
+app.use(express.json({ limit: '50mb' })); // Increased limit for large project data
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(morgan('dev'));
@@ -34,7 +34,7 @@ app.use(morgan('dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Import routes
-const designRoutes = require('./routes/designs');
+const projectRoutes = require('./routes/projects');
 const authRoutes = require('./routes/auth');
 const presentationRoutes = require('./routes/presentations');
 const userRoutes = require('./routes/userRoutes'); // Import user routes
@@ -42,7 +42,7 @@ const folderRoutes = require('./routes/folders');
 const assetRoutes = require('./routes/assets');
 
 // Routes
-app.use('/api/designs', designRoutes);
+app.use('/api/projects', projectRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/presentations', presentationRoutes);
 app.use('/api/users', userRoutes); // Use user routes
