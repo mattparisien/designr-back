@@ -14,6 +14,7 @@ const path = require('path');
 // Now require modules that need environment variables
 const { connectDB } = require('./config/db'); // Import connectDB from db.js
 const authController = require('./controllers/authController');
+const { ensureRootFolder } = require('./controllers/folderController'); // Import ensureRootFolder from folderController
 
 // Create Express app
 const app = express();
@@ -54,11 +55,32 @@ app.get('/', (req, res) => {
   res.send('Canva Clone API is running');
 });
 
+// Ensure root folders exist for all users
+const fixRootFolders = async () => {
+  try {
+    console.log('Checking and fixing root folders for all users...');
+    // Get all users
+    const User = require('./models/User');
+    const users = await User.find({}, '_id');
+    
+    // Create/update root folder for each user
+    for (const user of users) {
+      await ensureRootFolder(user._id);
+    }
+    
+    console.log(`Root folders checked for ${users.length} users`);
+  } catch (error) {
+    console.error('Error fixing root folders:', error);
+  }
+};
+
 // Connect to MongoDB and initialize GridFS
 connectDB() // Use connectDB from db.js
   .then(() => {
     // Initialize Passport for Google OAuth
     authController.initializePassport(app);
+    // Fix root folders on startup
+    fixRootFolders();
     // Start the server after successful DB connection
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
@@ -75,4 +97,11 @@ app.use((err, req, res, next) => {
     message: 'Something went wrong!', 
     error: process.env.NODE_ENV === 'development' ? err.message : undefined 
   });
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error(`Error: ${err.message}`);
+  // Close server & exit process
+  process.exit(1);
 });
