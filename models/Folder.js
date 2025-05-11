@@ -25,6 +25,10 @@ const FolderSchema = new Schema({
     type: String, 
     default: '/' // Stores a path like /root/subfolder for easy navigation
   },
+  paths: {
+    type: [String],
+    default: [] // Stores path segments split by '/' for easy traversal
+  },
   isShared: {
     type: Boolean,
     default: false

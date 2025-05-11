@@ -1,47 +1,6 @@
 const Folder = require('../models/Folder');
 const Asset = require('../models/Asset');
 
-// Utility function to ensure root folder exists for a user
-exports.ensureRootFolder = async (userId) => {
-  try {
-    // Check if root folder exists
-    let rootFolder = await Folder.findOne({ 
-      userId, 
-      name: 'Root', 
-      parentId: null 
-    });
-    
-    if (rootFolder) {
-      // Update existing root folder if needed
-      if (!rootFolder.path || rootFolder.path !== '/root') {
-        rootFolder.path = '/root';
-        if (!rootFolder.slug) {
-          rootFolder.slug = 'root';
-        }
-        await rootFolder.save();
-        console.log(`Updated root folder for user ${userId}`);
-      }
-      return rootFolder;
-    } else {
-      // Create root folder if it doesn't exist
-      const newRootFolder = new Folder({
-        name: 'Root',
-        slug: 'root',
-        userId,
-        parentId: null,
-        path: '/root',
-        isShared: false
-      });
-      
-      await newRootFolder.save();
-      console.log(`Created root folder for user ${userId}`);
-      return newRootFolder;
-    }
-  } catch (error) {
-    console.error('Error ensuring root folder exists:', error);
-    throw error;
-  }
-};
 
 // Get all folders for a user (with optional parent folder filtering)
 exports.getFolders = async (req, res) => {
@@ -56,10 +15,6 @@ exports.getFolders = async (req, res) => {
                 message: 'User ID is required' 
             });
         }
-
-        // Ensure root folder exists for this user
-        await exports.ensureRootFolder(userId);
-        
         const query = { userId };
         
         // If parentId is provided, filter by it
@@ -118,55 +73,49 @@ exports.getFolderById = async (req, res) => {
   }
 };
 
+// Add a function to build paths for a folder as array of segments
+const buildFolderPaths = async (folder) => {
+  // First build the full path string
+  await folder.buildPath();
+  
+  // Split the path into segments and remove empty elements
+  const segments = folder.path.split('/').filter(segment => segment.length > 0);
+  
+  // Store the full path segments array
+  folder.paths = segments;
+  
+  return segments;
+};
+
 // Create a new folder
 exports.createFolder = async (req, res) => {
-    try {
-        const { name, parentId, userId } = req.body;
+  try {
+    const { name, parentId, userId } = req.body;
 
-        if (!name || !userId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Name and userId are required'
-            });
-        }
+    // Create a new folder
+    const newFolder = new Folder({
+      name,
+      // If parentId is undefined, empty string, or explicitly set to null/root, set it to null
+      parentId: (!parentId || parentId === '' || parentId === 'null' || parentId === 'root') ? null : parentId,
+      userId
+    });
 
-        // Ensure root folder exists
-        await exports.ensureRootFolder(userId);
+    // Build the full path and then populate the paths array
+    await buildFolderPaths(newFolder);
+    await newFolder.save();
 
-        // Create the folder
-        const folder = new Folder({
-            name,
-            userId,
-            parentId: parentId || null
-        });
-
-        // Generate the path
-        await folder.buildPath();
-
-        // Save the folder
-        await folder.save();
-
-        return res.status(201).json({
-            success: true,
-            data: folder
-        });
-    } catch (error) {
-        console.error('Error creating folder:', error);
-        
-        // Handle duplicate folder name error
-        if (error.code === 11000) {
-            return res.status(400).json({
-                success: false,
-                message: 'A folder with this name already exists in this location'
-            });
-        }
-
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to create folder',
-            error: error.message
-        });
+    res.status(201).json(newFolder);
+  } catch (error) {
+    console.error('Error creating folder:', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        message: 'A folder with this name already exists in this location' 
+      });
     }
+    
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 };
 
 // Get a folder by ID
@@ -204,11 +153,6 @@ exports.getFolderBySlug = async (req, res) => {
                 success: false,
                 message: 'userId query parameter is required'
             });
-        }
-
-        // If the slug is 'root', ensure the root folder exists
-        if (slug === 'root') {
-            await exports.ensureRootFolder(userId);
         }
 
         const folder = await Folder.findBySlug(slug, userId);
@@ -324,65 +268,48 @@ exports.deleteFolder = async (req, res) => {
 // Move folder to a new parent
 exports.moveFolder = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { newParentId } = req.body;
+    const { folderId, newParentId } = req.body;
+    const folder = await Folder.findById(folderId);
     
-    // Find the folder to move
-    const folder = await Folder.findById(id);
     if (!folder) {
       return res.status(404).json({ message: 'Folder not found' });
     }
     
-    // Check if a folder with the same name already exists at the destination
-    const existingFolder = await Folder.findOne({
-      _id: { $ne: id }, // Exclude the current folder
-      name: { $regex: new RegExp(`^${folder.name}$`, 'i') }, // Case insensitive match
-      userId: folder.userId,
-      parentId: newParentId || null
-    });
-
-    if (existingFolder) {
-      return res.status(400).json({ 
-        message: 'A folder with this name already exists at the destination' 
-      });
+    // Check authorization
+    if (folder.userId !== req.user.id && !folder.sharedWith.includes(req.user.id)) {
+      return res.status(403).json({ message: 'Not authorized to move this folder' });
     }
     
-    // Check if the new parent exists (or is null for root)
-    let newPath = '/';
-    if (newParentId) {
-      const newParent = await Folder.findById(newParentId);
-      if (!newParent) {
-        return res.status(404).json({ message: 'New parent folder not found' });
-      }
-      
-      // Prevent circular references
-      if (folder._id.equals(newParentId) || folder.path.includes(`/${newParent.name}`)) {
-        return res.status(400).json({ message: 'Cannot move folder inside itself or its descendants' });
-      }
-      
-      // Build new path
-      newPath = newParent.path === '/' ? `/${newParent.name}` : `${newParent.path}/${newParent.name}`;
-    }
+    // Update parentId - set to null if newParentId is empty, "null", or "root"
+    folder.parentId = (!newParentId || newParentId === '' || newParentId === 'null' || newParentId === 'root') 
+      ? null 
+      : newParentId;
     
-    // Calculate old path segment for updating descendants
-    const oldPath = folder.path === '/' ? `/${folder.name}` : `${folder.path}/${folder.name}`;
-    
-    // Update the folder itself
-    folder.parentId = newParentId || null;
-    folder.path = newPath;
+    // Rebuild path and paths array
+    await buildFolderPaths(folder);
     await folder.save();
     
-    // Update all descendant folders by replacing the path prefix
-    const descendants = await Folder.find({ path: { $regex: `^${oldPath}/` } });
-    for (const descendant of descendants) {
-      descendant.path = descendant.path.replace(oldPath, newPath);
-      await descendant.save();
-    }
+    // Update all subfolder paths
+    await updateSubfolderPaths(folder._id);
     
-    res.status(200).json({ message: 'Folder moved successfully', folder });
+    res.json(folder);
   } catch (error) {
     console.error('Error moving folder:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Helper function to update the paths of all subfolders when a parent folder is moved
+const updateSubfolderPaths = async (parentId) => {
+  const subfolders = await Folder.find({ parentId });
+  
+  for (const subfolder of subfolders) {
+    // Update paths array
+    await buildFolderPaths(subfolder);
+    await subfolder.save();
+    
+    // Recursively update subfolders
+    await updateSubfolderPaths(subfolder._id);
   }
 };
 
