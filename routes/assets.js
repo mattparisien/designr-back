@@ -8,6 +8,9 @@ const upload = assetController.configureMulter();
 // GET all assets (with optional filtering)
 router.get('/', assetController.getAssets);
 
+// GET file by filename (serve from GridFS)
+router.get('/file/:filename', assetController.serveAssetFile);
+
 // GET asset by ID
 router.get('/:id', assetController.getAssetById);
 
