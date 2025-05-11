@@ -96,16 +96,19 @@ exports.uploadAsset = async (req, res) => {
     // Determine asset type from MIME type
     const assetType = getAssetTypeFromMime(req.file.mimetype);
     
+    // Handle folderId correctly - if it's null, undefined, "null", or empty string, set it to null
+    const folderIdValue = folderId && folderId !== "null" && folderId !== "" ? folderId : null;
+    
     // Create the asset record
     const newAsset = new Asset({
       name: name || req.file.originalname,
       originalFilename: req.file.originalname,
       userId,
-      folderId: folderId || null,
+      folderId: folderIdValue,
       type: assetType,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
-      url: `/uploads/${req.file.filename}`, // Adjust based on your storage setup
+      url: `${process.env.API_URL}/uploads/${req.file.filename}`, // Adjust based on your storage setup
       tags: parsedTags,
       metadata: {
         // Additional metadata can be added here, like image dimensions
@@ -168,7 +171,7 @@ exports.deleteAsset = async (req, res) => {
     }
     
     // Delete the actual file
-    if (asset.url && asset.url.startsWith('/uploads/')) {
+    if (asset.url && asset.url.startsWith(`${process.env.API_URL}/uploads/`)) {
       const filePath = path.join(__dirname, '..', 'public', asset.url);
       try {
         await unlinkAsync(filePath);
@@ -205,9 +208,12 @@ exports.moveAsset = async (req, res) => {
     const { id } = req.params;
     const { folderId } = req.body;
     
+    // Handle folderId correctly - if it's null, undefined, "null", or empty string, set it to null
+    const folderIdValue = folderId && folderId !== "null" && folderId !== "" ? folderId : null;
+    
     // Validate folder if specified (null is valid for root)
-    if (folderId) {
-      const folderExists = await mongoose.model('Folder').exists({ _id: folderId });
+    if (folderIdValue) {
+      const folderExists = await mongoose.model('Folder').exists({ _id: folderIdValue });
       if (!folderExists) {
         return res.status(404).json({ message: 'Target folder not found' });
       }
@@ -215,7 +221,7 @@ exports.moveAsset = async (req, res) => {
     
     const asset = await Asset.findByIdAndUpdate(
       id,
-      { folderId: folderId || null },
+      { folderId: folderIdValue },
       { new: true }
     );
     
