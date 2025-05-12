@@ -8,6 +8,8 @@ const multer = require('multer');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { storage, getGridFsBucket } = require('../config/db');
+const cloudinary = require('../config/cloudinary');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinaryUploader');
 
 // Determine asset type from MIME type
 const getAssetTypeFromMime = (mimeType) => {
@@ -80,13 +82,12 @@ exports.uploadAsset = async (req, res) => {
     const { userId, folderId, name, tags } = req.body;
     
     if (!userId) {
-      // For GridFS, we need to delete the file from GridFS if validation fails
-      if (req.file.id) {
+      // Delete the temp file if validation fails
+      if (req.file.path) {
         try {
-          const gridFsBucket = getGridFsBucket();
-          await gridFsBucket.delete(new mongoose.Types.ObjectId(req.file.id));
-        } catch (gridfsError) {
-          console.error('Error cleaning up GridFS file:', gridfsError);
+          await unlinkAsync(req.file.path);
+        } catch (err) {
+          console.error('Error deleting temp file:', err);
         }
       }
       return res.status(400).json({ message: 'User ID is required' });
@@ -108,8 +109,9 @@ exports.uploadAsset = async (req, res) => {
     // Handle folderId correctly - if it's null, undefined, "null", or empty string, set it to null
     const folderIdValue = folderId && folderId !== "null" && folderId !== "" ? folderId : null;
     
-    // Get the API base URL from environment or use a default
-    const apiBaseUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`;
+    // Upload to Cloudinary
+    const cloudinaryFolder = `users/${userId}/${assetType}s`;
+    const uploadResult = await uploadToCloudinary(req.file.path, cloudinaryFolder);
     
     // Create the asset record
     const newAsset = new Asset({
@@ -120,76 +122,47 @@ exports.uploadAsset = async (req, res) => {
       type: assetType,
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
-      // Now we use the GridFS ID and filename for the URL
-      gridFsId: req.file.id,
-      url: `${apiBaseUrl}/api/assets/file/${req.file.filename}`,
+      // Use Cloudinary URL for the asset
+      cloudinaryId: uploadResult.public_id,
+      cloudinaryUrl: uploadResult.secure_url,
+      url: uploadResult.secure_url,
       tags: parsedTags,
       metadata: {
-        // Additional metadata can be added here, like image dimensions
+        width: uploadResult.width,
+        height: uploadResult.height,
+        format: uploadResult.format,
+        resource_type: uploadResult.resource_type
       }
     });
     
-    // For image files, create a thumbnail
+    // For image files, Cloudinary automatically generates transformations
     if (assetType === 'image') {
-      try {
-        // Get the GridFS file
-        const gridFsBucket = getGridFsBucket();
-        const readStream = gridFsBucket.openDownloadStream(new mongoose.Types.ObjectId(req.file.id));
-        
-        // Create a thumbnail using sharp
-        const thumbnailBuffer = await new Promise((resolve, reject) => {
-          const chunks = [];
-          readStream
-            .on('data', chunk => chunks.push(chunk))
-            .on('end', () => {
-              const buffer = Buffer.concat(chunks);
-              sharp(buffer)
-                .resize({ width: 200, height: 200, fit: 'inside' })
-                .toBuffer()
-                .then(resizedBuffer => resolve(resizedBuffer))
-                .catch(err => reject(err));
-            })
-            .on('error', err => reject(err));
-        });
-        
-        // Upload the thumbnail to GridFS
-        const thumbnailUploadStream = gridFsBucket.openUploadStream(
-          `thumb_${req.file.filename}`,
-          { contentType: 'image/jpeg' }
-        );
-        
-        const thumbnailId = thumbnailUploadStream.id;
-        
-        thumbnailUploadStream.write(thumbnailBuffer);
-        thumbnailUploadStream.end();
-        
-        // Wait for the upload to complete
-        await new Promise((resolve, reject) => {
-          thumbnailUploadStream.on('finish', resolve);
-          thumbnailUploadStream.on('error', reject);
-        });
-        
-        // Set the thumbnail URL
-        newAsset.thumbnail = `${apiBaseUrl}/api/assets/file/thumb_${req.file.filename}`;
-      } catch (thumbnailError) {
-        console.error('Error creating thumbnail:', thumbnailError);
-        // Continue without a thumbnail
-      }
+      // Create thumbnail URL using Cloudinary's transformation capabilities
+      const thumbnailUrl = cloudinary.url(uploadResult.public_id, {
+        width: 200,
+        height: 200,
+        crop: 'fill',
+        quality: 'auto',
+        fetch_format: 'auto',
+      });
+      
+      newAsset.thumbnail = thumbnailUrl;
     }
     
     const savedAsset = await newAsset.save();
     res.status(201).json(savedAsset);
   } catch (error) {
     console.error('Error uploading asset:', error);
-    // Clean up GridFS file if it exists
-    if (req.file && req.file.id) {
+    
+    // Clean up temp file if it exists
+    if (req.file && req.file.path) {
       try {
-        const gridFsBucket = getGridFsBucket();
-        await gridFsBucket.delete(new mongoose.Types.ObjectId(req.file.id));
-      } catch (gridfsError) {
-        console.error('Error cleaning up GridFS file after failed upload:', gridfsError);
+        await unlinkAsync(req.file.path);
+      } catch (err) {
+        console.error('Error deleting temp file after failed upload:', err);
       }
     }
+    
     res.status(400).json({ message: 'Failed to upload asset', error: error.message });
   }
 };
@@ -233,16 +206,27 @@ exports.deleteAsset = async (req, res) => {
       return res.status(404).json({ message: 'Asset not found' });
     }
     
-    // Delete GridFS file if applicable
+    // Delete from Cloudinary if applicable
+    if (asset.cloudinaryId) {
+      try {
+        const resourceType = asset.type === 'image' ? 'image' : 
+                            asset.type === 'video' ? 'video' : 'raw';
+        await deleteFromCloudinary(asset.cloudinaryId, resourceType);
+      } catch (cloudinaryError) {
+        console.warn('Could not delete from Cloudinary:', cloudinaryError);
+        // Continue anyway, as we still want to delete the database record
+      }
+    }
+    
+    // Delete GridFS file if applicable (for backward compatibility)
     if (asset.gridFsId) {
       try {
         const gridFsBucket = getGridFsBucket();
         await gridFsBucket.delete(new mongoose.Types.ObjectId(asset.gridFsId));
         
-        // Also delete the thumbnail if it exists (extract filename from the thumbnail URL)
-        if (asset.thumbnail) {
+        // Also delete the thumbnail if it exists
+        if (asset.thumbnail && !asset.cloudinaryId) { // Only for old GridFS thumbnails
           const thumbnailFilename = asset.thumbnail.split('/').pop();
-          // Find the file info to get the ID
           const filesCollection = mongoose.connection.db.collection('uploads.files');
           const fileInfo = await filesCollection.findOne({ filename: thumbnailFilename });
           if (fileInfo && fileInfo._id) {
@@ -251,7 +235,6 @@ exports.deleteAsset = async (req, res) => {
         }
       } catch (gfsError) {
         console.warn('Could not delete GridFS file:', gfsError);
-        // Continue anyway, as we still want to delete the database record
       }
     }
     
@@ -381,7 +364,7 @@ exports.serveAssetFile = async (req, res) => {
   }
 };
 
-// Configure multer for file uploads - now using GridFS storage
+// Configure multer for file uploads - using local disk storage temporarily before Cloudinary upload
 exports.configureMulter = () => {
   // File filter function
   const fileFilter = (req, file, cb) => {
@@ -402,9 +385,25 @@ exports.configureMulter = () => {
     fileSize: 20 * 1024 * 1024
   };
   
-  // Use the GridFS storage from db.js
+  // Use disk storage for temporary file storage before uploading to Cloudinary
+  const diskStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      const tempDir = path.join(__dirname, '../temp-uploads');
+      // Ensure the directory exists
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      cb(null, tempDir);
+    },
+    filename: function (req, file, cb) {
+      // Generate unique filename
+      const uniqueSuffix = crypto.randomBytes(16).toString('hex');
+      cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+  
   return multer({ 
-    storage, 
+    storage: diskStorage, 
     fileFilter, 
     limits 
   });

@@ -1,4 +1,9 @@
 const Project = require('../models/Project');
+const cloudinary = require('../config/cloudinary');
+const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
+const fs = require('fs');
+const { promisify } = require('util');
+const unlinkAsync = promisify(fs.unlink);
 
 // Get all projects (with optional filtering)
 exports.getProjects = async (req, res) => {
@@ -122,7 +127,35 @@ exports.getProjectById = async (req, res) => {
 // Create new project
 exports.createProject = async (req, res) => {
   try {
-    const newProject = new Project(req.body);
+    const projectData = req.body;
+    
+    // Handle thumbnail if it's a data URL (base64)
+    if (projectData.thumbnail && projectData.thumbnail.startsWith('data:image')) {
+      try {
+        // Upload the thumbnail to Cloudinary
+        const cloudinaryFolder = `users/${projectData.userId}/thumbnails`;
+        // Create a temporary file with the base64 data
+        const tmpFilePath = `/tmp/thumbnail_${Date.now()}.png`;
+        
+        // Extract the base64 data without the prefix
+        const base64Data = projectData.thumbnail.replace(/^data:image\/\w+;base64,/, "");
+        await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
+        
+        // Upload to Cloudinary
+        const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
+        
+        // Replace the data URL with the Cloudinary URL
+        projectData.thumbnail = uploadResult.secure_url;
+        
+        // Clean up the temporary file
+        await unlinkAsync(tmpFilePath);
+      } catch (thumbnailError) {
+        console.error('Error processing thumbnail:', thumbnailError);
+        // Continue with project creation even if thumbnail processing fails
+      }
+    }
+    
+    const newProject = new Project(projectData);
     const savedProject = await newProject.save();
     
     res.status(201).json(savedProject);
@@ -137,6 +170,41 @@ exports.updateProject = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    
+    // Handle thumbnail update if it's a data URL (base64)
+    if (updates.thumbnail && updates.thumbnail.startsWith('data:image')) {
+      try {
+        // Find the project to get the user ID
+        const project = id.match(/^[0-9a-fA-F]{24}$/) 
+          ? await Project.findById(id)
+          : await Project.findOne({ $or: [{ _id: id }, { 'pages.id': id }] });
+          
+        if (!project) {
+          return res.status(404).json({ message: 'Project not found' });
+        }
+        
+        // Upload the thumbnail to Cloudinary
+        const cloudinaryFolder = `users/${project.userId}/thumbnails`;
+        // Create a temporary file with the base64 data
+        const tmpFilePath = `/tmp/thumbnail_${Date.now()}.png`;
+        
+        // Extract the base64 data without the prefix
+        const base64Data = updates.thumbnail.replace(/^data:image\/\w+;base64,/, "");
+        await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
+        
+        // Upload to Cloudinary
+        const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
+        
+        // Replace the data URL with the Cloudinary URL
+        updates.thumbnail = uploadResult.secure_url;
+        
+        // Clean up the temporary file
+        await unlinkAsync(tmpFilePath);
+      } catch (thumbnailError) {
+        console.error('Error processing thumbnail:', thumbnailError);
+        // Continue with project update even if thumbnail processing fails
+      }
+    }
     
     let project;
     

@@ -36,11 +36,20 @@ const AssetSchema = new Schema({
   url: {
     type: String // URL to the file in storage
   },
+  cloudinaryId: {
+    type: String // Cloudinary public_id for the asset
+  },
+  cloudinaryUrl: {
+    type: String // Full Cloudinary URL for the asset
+  },
   gridFsId: {
     type: mongoose.Schema.Types.ObjectId // GridFS file ID if using GridFS for storage
   },
   thumbnail: {
     type: String // URL to thumbnail for images/videos
+  },
+  thumbnailCloudinaryId: {
+    type: String // Cloudinary public_id for the thumbnail
   },
   isShared: {
     type: Boolean,
