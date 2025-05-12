@@ -24,6 +24,70 @@ exports.getProjects = async (req, res) => {
   }
 };
 
+// Get projects with pagination
+exports.getPaginatedProjects = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      userId, 
+      starred, 
+      shared,
+      category, 
+      type, 
+      isTemplate,
+      search
+    } = req.query;
+
+    // Convert string parameters to appropriate types
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+    
+    // Build filter object based on query params
+    const filter = {};
+    if (userId) filter.userId = userId;
+    if (starred) filter.starred = starred === 'true';
+    if (shared) filter.shared = shared === 'true';
+    if (category) filter.category = category;
+    if (type) filter.type = type;
+    if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
+    
+    // Add text search if provided
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { type: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Execute queries in parallel for better performance
+    const [projects, totalProjects] = await Promise.all([
+      Project.find(filter)
+        .select('title type userId thumbnail category starred shared isTemplate description createdAt updatedAt')
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limitNumber),
+      Project.countDocuments(filter)
+    ]);
+    
+    // Calculate total pages
+    const totalPages = Math.ceil(totalProjects / limitNumber);
+    
+    res.status(200).json({
+      projects,
+      totalProjects,
+      totalPages,
+      currentPage: pageNumber
+    });
+  } catch (error) {
+    console.error('Error fetching paginated projects:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 // Get project by ID
 exports.getProjectById = async (req, res) => {
   try {

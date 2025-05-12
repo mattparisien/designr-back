@@ -5,6 +5,9 @@ const projectController = require('../controllers/projectController');
 // GET all projects (with optional filtering)
 router.get('/', projectController.getProjects);
 
+// GET projects with pagination
+router.get('/paginated', projectController.getPaginatedProjects);
+
 // GET all templates
 router.get('/templates', projectController.getTemplates);
 
