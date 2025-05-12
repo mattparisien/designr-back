@@ -2,6 +2,7 @@ const Project = require('../models/Project');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
 const fs = require('fs');
+const path = require('path');
 const { promisify } = require('util');
 const unlinkAsync = promisify(fs.unlink);
 
@@ -134,8 +135,15 @@ exports.createProject = async (req, res) => {
       try {
         // Upload the thumbnail to Cloudinary
         const cloudinaryFolder = `users/${projectData.userId}/thumbnails`;
-        // Create a temporary file with the base64 data
-        const tmpFilePath = `/tmp/thumbnail_${Date.now()}.png`;
+        // Create a temporary file with the base64 data in the project's temp-uploads directory
+        const tempDir = path.join(__dirname, '../temp-uploads');
+        
+        // Ensure temp directory exists
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
         
         // Extract the base64 data without the prefix
         const base64Data = projectData.thumbnail.replace(/^data:image\/\w+;base64,/, "");
@@ -185,8 +193,15 @@ exports.updateProject = async (req, res) => {
         
         // Upload the thumbnail to Cloudinary
         const cloudinaryFolder = `users/${project.userId}/thumbnails`;
-        // Create a temporary file with the base64 data
-        const tmpFilePath = `/tmp/thumbnail_${Date.now()}.png`;
+        // Create a temporary file with the base64 data in the project's temp-uploads directory
+        const tempDir = path.join(__dirname, '../temp-uploads');
+        
+        // Ensure temp directory exists
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
         
         // Extract the base64 data without the prefix
         const base64Data = updates.thumbnail.replace(/^data:image\/\w+;base64,/, "");
