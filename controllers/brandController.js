@@ -76,9 +76,10 @@ exports.createBrand = async (req, res) => {
 exports.updateBrand = async (req, res) => {
     try {
         const { name, description, industry, colorPalettes, typography, logos, brandVoice, images, guidelines, isActive } = req.body;
+        const userId = req.userId || "6825167ffe3452cafe0c8440"; // Default user ID for testing
 
         // Find brand and check ownership
-        const brand = await Brand.findOne({ _id: req.params.id, userId: req.userId });
+        const brand = await Brand.findOne({ _id: req.params.id, userId });
         if (!brand) {
             return res.status(404).json({ success: false, message: 'Brand not found or access denied' });
         }
