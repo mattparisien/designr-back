@@ -32,7 +32,9 @@ exports.getBrands = async (req, res) => {
  */
 exports.getBrandById = async (req, res) => {
     try {
-        const brand = await Brand.findOne({ _id: req.params.id, userId: req.userId });
+
+        const userId = req.userId || "6825167ffe3452cafe0c8440"; // Default user ID for testing
+        const brand = await Brand.findOne({ _id: req.params.id, userId: userId });
         if (!brand) {
             return res.status(404).json({ success: false, message: 'Brand not found' });
         }
