@@ -107,7 +107,6 @@ const BrandSchema = new Schema({
         trim: true
     },
     colorPalettes: [ColorPaletteSchema],
-    typography: [TypographySchema],
     logos: [LogoSchema],
     brandVoice: BrandVoiceSchema,
     images: [{
