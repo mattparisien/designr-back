@@ -94,6 +94,10 @@ const BrandSchema = new Schema({
         required: true,
         trim: true
     },
+    tagline: {
+        type: String,
+        trim: true
+    },
     userId: {
         type: String,
         required: true

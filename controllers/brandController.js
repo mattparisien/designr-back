@@ -50,11 +50,12 @@ exports.getBrandById = async (req, res) => {
  */
 exports.createBrand = async (req, res) => {
     try {
-        const { name, description, industry, colorPalettes, typography, logos, brandVoice } = req.body;
+        const { name, description, tagline, industry, colorPalettes, typography, logos, brandVoice } = req.body;
 
         const brand = await Brand.create({
             name,
             description,
+            tagline,
             industry,
             userId: req.userId,
             colorPalettes: colorPalettes || [],
@@ -75,7 +76,7 @@ exports.createBrand = async (req, res) => {
  */
 exports.updateBrand = async (req, res) => {
     try {
-        const { name, description, industry, colorPalettes, typography, logos, brandVoice, images, guidelines, isActive } = req.body;
+        const { name, description, tagline, industry, colorPalettes, typography, logos, brandVoice, images, guidelines, isActive } = req.body;
         const userId = req.userId || "6825167ffe3452cafe0c8440"; // Default user ID for testing
 
         // Find brand and check ownership
@@ -87,6 +88,7 @@ exports.updateBrand = async (req, res) => {
         // Update fields
         if (name) brand.name = name;
         if (description) brand.description = description;
+        if (tagline) brand.tagline = tagline;
         if (industry) brand.industry = industry;
         if (colorPalettes) brand.colorPalettes = colorPalettes;
         if (typography) brand.typography = typography;
@@ -312,13 +314,15 @@ async function analyzeAssetsWithAI(assets, brandName) {
             },
 
             guidelines: { type: "string" },
-            industry: { type: "string" }
+            industry: { type: "string" },
+            tagline: { type: "string" }
         },
         required: [
             "colorPalettes",
             "brandVoice",
             "guidelines",
-            "industry"
+            "industry",
+            "tagline"
         ]
     };
 
@@ -594,6 +598,7 @@ function formatTypography(aiTypography) {
 function generateFallbackBrandData(brandName, assets) {
     return {
         description: `Auto-generated brand identity for ${brandName}`,
+        tagline: `Experience the power of ${brandName}`,
         industry: 'General',
         colorPalettes: [{
             name: 'Default Palette',
