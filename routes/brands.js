@@ -1,10 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const brandController = require('../controllers/brandController');
-const authMiddleware = require('../middleware/auth');
-
-// Apply auth middleware to all brand routes
-router.use(authMiddleware);
 
 // Get all brands for a user
 router.get('/', brandController.getBrands);

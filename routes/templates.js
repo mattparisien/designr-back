@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const templateController = require('../controllers/templateController');
-const auth = require('../middleware/auth');
 
 // GET all templates (with optional filtering)
 router.get('/', templateController.getTemplates);
@@ -19,18 +18,18 @@ router.get('/popular/all', templateController.getPopularTemplates);
 router.get('/category/:category', templateController.getTemplatesByCategory);
 
 // POST create new template
-router.post('/', auth, templateController.createTemplate);
+router.post('/', templateController.createTemplate);
 
 // POST create project from template
-router.post('/:id/use', auth, templateController.useTemplate);
+router.post('/:id/use', templateController.useTemplate);
 
 // POST create template from existing project
-router.post('/from-project/:projectId', auth, templateController.createTemplateFromProject);
+router.post('/from-project/:projectId', templateController.createTemplateFromProject);
 
 // PUT update template
-router.put('/:id', auth, templateController.updateTemplate);
+router.put('/:id', templateController.updateTemplate);
 
 // DELETE template
-router.delete('/:id', auth, templateController.deleteTemplate);
+router.delete('/:id', templateController.deleteTemplate);
 
 module.exports = router;
