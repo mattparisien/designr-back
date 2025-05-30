@@ -2,6 +2,7 @@ const Brand = require('../models/Brand');
 const Asset = require('../models/Asset');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { ObjectId } = require('mongoose').Types;
 const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
 const { OpenAI } = require('openai');
 
@@ -15,7 +16,8 @@ const openai = new OpenAI({
  */
 exports.getBrands = async (req, res) => {
     try {
-        const brands = await Brand.find({ userId: req.userId });
+        const userId = req.userId || "6825167ffe3452cafe0c8440"; // Default user ID for testing
+        const brands = await Brand.find({ userId });
         res.status(200).json({ success: true, data: brands });
     } catch (error) {
         console.error('Error fetching brands:', error);
@@ -120,6 +122,8 @@ exports.deleteBrand = async (req, res) => {
 exports.generateBrandFromAssets = async (req, res) => {
     try {
         const { assetIds, brandName } = req.body;
+        const userId = req.userId || "6825167ffe3452cafe0c8440";
+
 
         if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
             return res.status(400).json({ success: false, message: 'Asset IDs are required' });
@@ -130,22 +134,24 @@ exports.generateBrandFromAssets = async (req, res) => {
         }
 
         // Get assets that belong to the user
+        
         const assets = await Asset.find({
-            _id: { $in: assetIds },
-            userId: req.userId
+            _id: { $in: assetIds.map(id => new ObjectId(id)) },
+            // userId: req.userId
         });
+
 
         if (!assets || assets.length === 0) {
             return res.status(404).json({ success: false, message: 'No valid assets found' });
         }
 
         // Process assets to extract colors, text, and imagery
-        const brandData = await analyzeAssetsWithAI(assets, brandName, req.userId);
+        const brandData = await analyzeAssetsWithAI(assets, brandName, userId);
 
         // Create a new brand with the generated data
         const brand = await Brand.create({
             name: brandName,
-            userId: req.userId,
+            userId: userId,
             ...brandData,
             createdFromAssets: assets.map(asset => asset._id)
         });
@@ -239,99 +245,109 @@ exports.shareBrand = async (req, res) => {
 };
 
 /**
- * Use OpenAI to analyze assets and generate brand identity
- * @param {Array} assets - The assets to analyze
- * @param {String} brandName - The name of the brand
- * @param {String} userId - The user ID
- * @returns {Object} - The generated brand data
+ * Generate a brand identity using the new /v1/responses endpoint.
  */
 async function analyzeAssetsWithAI(assets, brandName, userId) {
-    try {
-        // Prepare data about assets for OpenAI
-        const assetDescriptions = assets.map(asset => {
-            return {
-                type: asset.type,
-                name: asset.name,
-                mimeType: asset.mimeType,
-                url: asset.url || asset.cloudinaryUrl,
-                tags: asset.tags || []
-            };
-        });
+  // ----- Summarise the inputs -----
+  const assetSummaries = assets.map(a => ({
+    type:     a.type,
+    name:     a.name,
+    mimeType: a.mimeType,
+    url:      a.url || a.cloudinaryUrl,
+    tags:     a.tags ?? []
+  }));
 
-        // Extracting text content from text-based assets could be done here
-        // For now, we'll focus on image analysis which is more straightforward
-        const imageAssets = assets.filter(asset => asset.type === 'image');
+  const extractedColors =
+    assets.some(a => a.type === "image")
+      ? ["#3A5A9B", "#FFFFFF", "#E63946", "#F1FAEE", "#A8DADC"]
+      : [];
 
-        // Extract colors from image assets if available
-        let extractedColors = [];
-        if (imageAssets.length > 0) {
-            // We would have a more sophisticated color extraction implementation in production
-            // For now, just use a placeholder as if we've analyzed the images
-            extractedColors = ['#3A5A9B', '#FFFFFF', '#E63946', '#F1FAEE', '#A8DADC'];
+  const userPrompt = `
+Create a complete brand identity for **${brandName}** from the supplied assets.
+
+Assets:
+${JSON.stringify(assetSummaries, null, 2)}
+
+Extracted colours (may be used, extended, or ignored):
+${extractedColors.join(", ") || "none"}
+`;
+
+  // ----- Optional JSON-Schema helper -----
+  const brandSchema = {
+    type: "object",
+    properties: {
+      colorPalettes: {
+        type: "object",
+        properties: {
+          primary:   { type: "array", items: { type: "string" } },
+          secondary: { type: "array", items: { type: "string" } },
+          accent:    { type: "array", items: { type: "string" } }
+        },
+        required: ["primary"]
+      },
+      typography: {
+        type: "object",
+        properties: {
+          heading: { type: "string" },
+          body:    { type: "string" }
+        },
+        required: ["heading","body"]
+      },
+      brandVoice: {
+        type: "object",
+        properties: {
+          tone:        { type: "string" },
+          keywords:    { type: "array", items: { type: "string" } },
+          description: { type: "string" },
+          sampleCopy:  { type: "array", items: { type: "string" } }
         }
+      },
+      guidelines: { type: "string" },
+      industry:   { type: "string" }
+    },
+    required: ["colorPalettes","typography","brandVoice","guidelines","industry"]
+  };
 
-        // Use OpenAI to generate brand identity based on assets
-        const prompt = `
-    I need to create a brand identity for a company called "${brandName}".
-    
-    I have the following assets:
-    ${JSON.stringify(assetDescriptions)}
-    
-    If color extraction was performed, these colors were found:
-    ${extractedColors.join(', ')}
-    
-    Based on these assets, please generate a comprehensive brand identity with:
-    1. A color palette with primary, secondary, and accent colors (in hex codes)
-    2. Typography recommendations (font pairings for headings and body text)
-    3. Brand voice characteristics and tone
-    4. Brief brand guidelines
-    5. Industry category suggestions
-    
-    Format your response as a JSON object with these keys: colorPalettes, typography, brandVoice, guidelines, industry
-    `;
+  try {
+    // ----- NEW Responses API call -----
+    const completion = await openai.responses.create({
+      model: "o3-turbo",            // swap for the model you have access to
+      instructions:                 // system message equivalent
+        "You are a senior brand-identity designer. " +
+        "Return ONLY JSON matching the provided schema.",
+      inputs: [
+        { role: "user", content: userPrompt }
+      ],
+      format: {                     // replaces response_format/tools combo
+        type:   "json",
+        schema: brandSchema
+      },
+      // store: false               // uncomment if you don't want OpenAI to retain the response 
+    });
 
-        // Make API call to OpenAI
-        const completion = await openai.chat.completions.create({
-            messages: [
-                { role: 'system', content: 'You are a professional brand identity designer with expertise in color theory, typography, and marketing. Create a cohesive brand identity based on the provided assets. Return only valid JSON without any explanation or markdown.' },
-                { role: 'user', content: prompt }
-            ],
-            model: 'gpt-4-turbo', // Use appropriate model
-            response_format: { type: "json_object" }
-        });
+    // ----- Parse & normalise -----
+    const data = completion.choices[0].message.json;
+    // (The SDK already parses the JSON for you when format.type === "json")
 
-        // Parse the response
-        const responseData = JSON.parse(completion.choices[0].message.content);
-
-        // Format the data to match our Brand model structure
-        const brandData = {
-            description: responseData.description || `Auto-generated brand identity for ${brandName}`,
-            industry: responseData.industry || '',
-            colorPalettes: responseData.colorPalettes ? formatColorPalettes(responseData.colorPalettes) : [],
-            typography: responseData.typography ? formatTypography(responseData.typography) : [],
-            brandVoice: responseData.brandVoice || {
-                tone: 'professional',
-                keywords: [],
-                description: '',
-                sampleCopy: []
-            },
-            guidelines: responseData.guidelines || '',
-            aiInsights: {
-                generationDate: new Date().toISOString(),
-                assetsAnalyzed: assets.length,
-                confidence: 'medium',
-                rawResponse: responseData
-            }
-        };
-
-        return brandData;
-    } catch (error) {
-        console.error('Error analyzing assets with AI:', error);
-        // Return a basic template if AI analysis fails
-        return generateFallbackBrandData(brandName, assets);
-    }
+    return {
+      description: `Auto-generated brand identity for ${brandName}`,
+      industry:    data.industry,
+      colorPalettes: formatColorPalettes(data.colorPalettes),
+      typography:    formatTypography(data.typography),
+      brandVoice:    data.brandVoice,
+      guidelines:    data.guidelines,
+      aiInsights: {
+        generationDate: new Date().toISOString(),
+        assetsAnalyzed: assets.length,
+        confidence:     "medium",
+        rawResponse:    data
+      }
+    };
+  } catch (err) {
+    console.error("⚠️  AI brand-generation failed:", err);
+    return generateFallbackBrandData(brandName, assets);
+  }
 }
-
 /**
  * Use OpenAI to analyze a single asset and update brand data
  */

@@ -11,12 +11,23 @@ const { storage, getGridFsBucket } = require('../config/db');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinaryUploader');
 
-// Determine asset type from MIME type
-const getAssetTypeFromMime = (mimeType) => {
+// Determine asset type from MIME type or file extension
+const getAssetTypeFromMime = (mimeType, filename = '') => {
+  // First try to determine from MIME type
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType.match(/pdf|word|excel|powerpoint|text|rtf|doc|xls|ppt|pages|numbers|keynote/i)) return 'document';
+  
+  // If MIME type is generic (like application/octet-stream), check file extension
+  if (mimeType === 'application/octet-stream' || mimeType === 'binary/octet-stream') {
+    const ext = filename.toLowerCase();
+    if (ext.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return 'image';
+    if (ext.match(/\.(mp4|mov|avi|webm)$/)) return 'video';
+    if (ext.match(/\.(mp3|wav|ogg|m4a)$/)) return 'audio';
+    if (ext.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/)) return 'document';
+  }
+  
   return 'other';
 };
 
@@ -25,11 +36,10 @@ exports.getAssets = async (req, res) => {
   try {
     const { userId, folderId, type } = req.query;
     
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
+    // Use default user if no userId provided (since auth is disabled)
+    const effectiveUserId = userId || 'default-user';
     
-    const filter = { userId };
+    const filter = { userId: effectiveUserId };
     
     // Filter by folder
     if (folderId !== undefined) {
@@ -81,17 +91,8 @@ exports.uploadAsset = async (req, res) => {
     
     const { userId, folderId, name, tags } = req.body;
     
-    if (!userId) {
-      // Delete the temp file if validation fails
-      if (req.file.path) {
-        try {
-          await unlinkAsync(req.file.path);
-        } catch (err) {
-          console.error('Error deleting temp file:', err);
-        }
-      }
-      return res.status(400).json({ message: 'User ID is required' });
-    }
+    // Use a default userId if none provided (since auth is disabled)
+    const effectiveUserId = userId || 'default-user';
     
     // Parse the tags if they exist
     let parsedTags = [];
@@ -104,23 +105,52 @@ exports.uploadAsset = async (req, res) => {
     }
     
     // Determine asset type from MIME type
-    const assetType = getAssetTypeFromMime(req.file.mimetype);
+    const assetType = getAssetTypeFromMime(req.file.mimetype, req.file.originalname);
+    
+    console.log('Processing file upload:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      detectedType: assetType,
+      userId: effectiveUserId
+    });
+    
+    // Correct the MIME type if it's generic but we detected the actual type from extension
+    let correctedMimeType = req.file.mimetype;
+    if (req.file.mimetype === 'application/octet-stream' || req.file.mimetype === 'binary/octet-stream') {
+      const ext = req.file.originalname.toLowerCase();
+      if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) {
+        correctedMimeType = 'image/jpeg';
+      } else if (ext.endsWith('.png')) {
+        correctedMimeType = 'image/png';
+      } else if (ext.endsWith('.gif')) {
+        correctedMimeType = 'image/gif';
+      } else if (ext.endsWith('.webp')) {
+        correctedMimeType = 'image/webp';
+      } else if (ext.endsWith('.svg')) {
+        correctedMimeType = 'image/svg+xml';
+      }
+      
+      if (correctedMimeType !== req.file.mimetype) {
+        console.log(`Corrected MIME type from ${req.file.mimetype} to ${correctedMimeType} based on extension`);
+      }
+    }
     
     // Handle folderId correctly - if it's null, undefined, "null", or empty string, set it to null
     const folderIdValue = folderId && folderId !== "null" && folderId !== "" ? folderId : null;
     
     // Upload to Cloudinary
-    const cloudinaryFolder = `users/${userId}/${assetType}s`;
+    const cloudinaryFolder = `users/${effectiveUserId}/${assetType}s`;
     const uploadResult = await uploadToCloudinary(req.file.path, cloudinaryFolder);
     
     // Create the asset record
     const newAsset = new Asset({
       name: name || req.file.originalname,
       originalFilename: req.file.originalname,
-      userId,
+      userId: effectiveUserId,
       folderId: folderIdValue,
       type: assetType,
-      mimeType: req.file.mimetype,
+      mimeType: correctedMimeType,
       fileSize: req.file.size,
       // Use Cloudinary URL for the asset
       cloudinaryId: uploadResult.public_id,
@@ -368,16 +398,55 @@ exports.serveAssetFile = async (req, res) => {
 exports.configureMulter = () => {
   // File filter function
   const fileFilter = (req, file, cb) => {
-    // Accept images, videos, docs and common file types
-    const allowedTypes = /jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx/i;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    console.log('File upload attempt:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      fieldname: file.fieldname
+    });
     
-    if (extname && mimetype) {
+    // Define allowed file extensions
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx)$/i;
+    
+    // Define allowed MIME types (including common generic ones)
+    const allowedMimeTypes = [
+      // Images
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      // Videos
+      'video/mp4', 'video/quicktime', 'video/avi', 'video/webm',
+      // Documents
+      'application/pdf',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Generic types that browsers sometimes send
+      'application/octet-stream', 'binary/octet-stream'
+    ];
+    
+    const filename = file.originalname.toLowerCase();
+    const hasValidExtension = allowedExtensions.test(filename);
+    const hasValidMimeType = allowedMimeTypes.includes(file.mimetype.toLowerCase());
+    
+    // Allow file if it has a valid extension, regardless of MIME type
+    // This handles cases where browsers send application/octet-stream for images
+    if (hasValidExtension) {
+      console.log('File accepted based on extension:', filename);
       return cb(null, true);
-    } else {
-      cb(new Error('File type not allowed!'), false);
     }
+    
+    // Also allow if MIME type is explicitly valid (for properly detected files)
+    if (hasValidMimeType && !file.mimetype.includes('octet-stream')) {
+      console.log('File accepted based on MIME type:', file.mimetype);
+      return cb(null, true);
+    }
+    
+    console.log('File rejected:', {
+      filename,
+      mimetype: file.mimetype,
+      hasValidExtension,
+      hasValidMimeType
+    });
+    
+    cb(new Error(`File type not allowed! Received: ${file.mimetype} for file: ${file.originalname}`), false);
   };
   
   // Set up size limits: 20MB for regular uploads
