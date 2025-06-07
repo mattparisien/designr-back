@@ -65,7 +65,14 @@ const AssetSchema = new Schema({
   tags: [{
     type: String,
     trim: true
-  }]
+  }],
+  vectorized: {
+    type: Boolean,
+    default: false // Track if asset has been added to vector store
+  },
+  vectorLastUpdated: {
+    type: Date // Track when vector was last updated
+  }
 }, {
   timestamps: true // Automatically add createdAt and updatedAt fields
 });

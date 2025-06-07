@@ -14,6 +14,8 @@ const path = require('path');
 // Now require modules that need environment variables
 const { connectDB } = require('./config/db'); // Import connectDB from db.js
 const authController = require('./controllers/authController');
+const vectorStoreService = require('./services/vectorStore');
+const vectorJobProcessor = require('./services/vectorJobProcessor');
 
 // Create Express app
 const app = express();
@@ -60,9 +62,19 @@ app.get('/', (req, res) => {
 
 // Connect to MongoDB and initialize GridFS
 connectDB() // Use connectDB from db.js
-  .then(() => {
+  .then(async () => {
+    // Initialize vector services
+    try {
+      await vectorStoreService.initialize();
+      console.log('Vector store service initialized');
+    } catch (error) {
+      console.warn('Vector store service initialization failed:', error.message);
+      console.warn('Vector search features will be disabled');
+    }
+    
     // Initialize Passport for Google OAuth
     authController.initializePassport(app);
+    
     // Start the server after successful DB connection
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

@@ -10,6 +10,8 @@ const sharp = require('sharp');
 const { storage, getGridFsBucket } = require('../config/db');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinaryUploader');
+const vectorStoreService = require('../services/vectorStore');
+const vectorJobProcessor = require('../services/vectorJobProcessor');
 
 // Determine asset type from MIME type or file extension
 const getAssetTypeFromMime = (mimeType, filename = '') => {
@@ -236,6 +238,15 @@ exports.uploadAsset = async (req, res) => {
     }
     
     const savedAsset = await newAsset.save();
+    
+    // Queue asset for vectorization in background
+    try {
+      await vectorJobProcessor.queueVectorization(savedAsset._id, effectiveUserId);
+    } catch (vectorError) {
+      console.warn('Failed to queue asset for vectorization:', vectorError);
+      // Don't fail the upload, just log the warning
+    }
+    
     res.status(201).json(savedAsset);
   } catch (error) {
     console.error('Error uploading asset:', error);
@@ -273,6 +284,15 @@ exports.updateAsset = async (req, res) => {
     
     if (!asset) {
       return res.status(404).json({ message: 'Asset not found' });
+    }
+
+    // Re-queue asset for vectorization if metadata was updated
+    if (updates.name || updates.tags) {
+      try {
+        await vectorJobProcessor.queueVectorization(asset._id, asset.userId, 'medium');
+      } catch (vectorError) {
+        console.warn('Failed to queue asset for re-vectorization:', vectorError);
+      }
     }
     
     res.status(200).json(asset);
@@ -321,6 +341,16 @@ exports.deleteAsset = async (req, res) => {
         }
       } catch (gfsError) {
         console.warn('Could not delete GridFS file:', gfsError);
+      }
+    }
+    
+    // Delete from vector store if vectorized
+    if (asset.vectorized) {
+      try {
+        await vectorStoreService.deleteVector(asset._id.toString(), asset.userId);
+      } catch (vectorError) {
+        console.warn('Could not delete from vector store:', vectorError);
+        // Continue anyway, as we still want to delete the database record
       }
     }
     
@@ -532,4 +562,175 @@ exports.configureMulter = () => {
     fileFilter, 
     limits 
   });
+};
+
+// Vector search assets by semantic similarity
+exports.searchAssetsByVector = async (req, res) => {
+  try {
+    const { query, userId, limit = 10, threshold = 0.7 } = req.query;
+    
+    if (!query) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    const results = await vectorStoreService.searchSimilarAssets(
+      query, 
+      effectiveUserId, 
+      parseInt(limit), 
+      parseFloat(threshold)
+    );
+    
+    // Get full asset details for the results
+    const assetIds = results.map(r => r.assetId);
+    const assets = await Asset.find({ 
+      _id: { $in: assetIds },
+      userId: effectiveUserId 
+    });
+    
+    // Merge similarity scores with asset data
+    const enrichedResults = assets.map(asset => {
+      const result = results.find(r => r.assetId === asset._id.toString());
+      return {
+        ...asset.toObject(),
+        similarity: result?.similarity || 0
+      };
+    });
+    
+    // Sort by similarity score
+    enrichedResults.sort((a, b) => b.similarity - a.similarity);
+    
+    res.status(200).json({
+      query,
+      results: enrichedResults,
+      total: enrichedResults.length
+    });
+  } catch (error) {
+    console.error('Error in vector search:', error);
+    res.status(500).json({ message: 'Vector search failed', error: error.message });
+  }
+};
+
+// Find similar assets to a given asset
+exports.findSimilarAssets = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 5, threshold = 0.8 } = req.query;
+    
+    const asset = await Asset.findById(id);
+    if (!asset) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+    
+    if (!asset.vectorized) {
+      return res.status(400).json({ message: 'Asset has not been vectorized yet' });
+    }
+    
+    const results = await vectorStoreService.findSimilarAssets(
+      id, 
+      asset.userId, 
+      parseInt(limit), 
+      parseFloat(threshold)
+    );
+    
+    // Get full asset details for the results
+    const assetIds = results.map(r => r.assetId);
+    const similarAssets = await Asset.find({ 
+      _id: { $in: assetIds, $ne: id }, // Exclude the original asset
+      userId: asset.userId 
+    });
+    
+    // Merge similarity scores with asset data
+    const enrichedResults = similarAssets.map(similarAsset => {
+      const result = results.find(r => r.assetId === similarAsset._id.toString());
+      return {
+        ...similarAsset.toObject(),
+        similarity: result?.similarity || 0
+      };
+    });
+    
+    // Sort by similarity score
+    enrichedResults.sort((a, b) => b.similarity - a.similarity);
+    
+    res.status(200).json({
+      originalAsset: asset,
+      similarAssets: enrichedResults,
+      total: enrichedResults.length
+    });
+  } catch (error) {
+    console.error('Error finding similar assets:', error);
+    res.status(500).json({ message: 'Failed to find similar assets', error: error.message });
+  }
+};
+
+// Get vector store statistics and management info
+exports.getVectorStats = async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const effectiveUserId = userId || 'default-user';
+    
+    // Get vectorization status counts
+    const totalAssets = await Asset.countDocuments({ userId: effectiveUserId });
+    const vectorizedAssets = await Asset.countDocuments({ 
+      userId: effectiveUserId, 
+      vectorized: true 
+    });
+    const pendingVectorization = totalAssets - vectorizedAssets;
+    
+    // Get vector store stats
+    const vectorStats = await vectorStoreService.getStats(effectiveUserId);
+    
+    res.status(200).json({
+      user: effectiveUserId,
+      assets: {
+        total: totalAssets,
+        vectorized: vectorizedAssets,
+        pending: pendingVectorization,
+        vectorizationRate: totalAssets > 0 ? (vectorizedAssets / totalAssets * 100).toFixed(2) : 0
+      },
+      vectorStore: vectorStats,
+      queueStats: await vectorJobProcessor.getQueueStats()
+    });
+  } catch (error) {
+    console.error('Error getting vector stats:', error);
+    res.status(500).json({ message: 'Failed to get vector statistics', error: error.message });
+  }
+};
+
+// Force re-vectorization of all assets for a user
+exports.reVectorizeAssets = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const effectiveUserId = userId || 'default-user';
+    
+    const result = await vectorJobProcessor.processAllUnvectorizedAssets(effectiveUserId, true);
+    
+    res.status(200).json({
+      message: 'Re-vectorization initiated',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error initiating re-vectorization:', error);
+    res.status(500).json({ message: 'Failed to initiate re-vectorization', error: error.message });
+  }
+};
+
+// Process pending vectorization jobs
+exports.processVectorJobs = async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const effectiveUserId = userId || 'default-user';
+    
+    const result = await vectorJobProcessor.processAllUnvectorizedAssets(effectiveUserId);
+    
+    res.status(200).json({
+      message: 'Vectorization processing initiated',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error processing vector jobs:', error);
+    res.status(500).json({ message: 'Failed to process vector jobs', error: error.message });
+  }
 };

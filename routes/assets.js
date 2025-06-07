@@ -8,8 +8,23 @@ const upload = assetController.configureMulter();
 // GET all assets (with optional filtering)
 router.get('/', assetController.getAssets);
 
+// GET vector search assets by semantic similarity
+router.get('/search/vector', assetController.searchAssetsByVector);
+
+// GET vector store statistics
+router.get('/vector/stats', assetController.getVectorStats);
+
+// POST process pending vectorization jobs
+router.post('/vector/process', assetController.processVectorJobs);
+
+// POST force re-vectorization of all assets
+router.post('/vector/revectorize', assetController.reVectorizeAssets);
+
 // GET file by filename (serve from GridFS)
 router.get('/file/:filename', assetController.serveAssetFile);
+
+// GET similar assets to a given asset
+router.get('/:id/similar', assetController.findSimilarAssets);
 
 // GET asset by ID
 router.get('/:id', assetController.getAssetById);
