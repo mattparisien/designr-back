@@ -31,6 +31,18 @@ const getAssetTypeFromMime = (mimeType, filename = '') => {
   return 'other';
 };
 
+// Calculate file hash for duplicate detection
+const calculateFileHash = (filePath) => {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    
+    stream.on('error', reject);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+};
+
 // Get assets (with filtering options)
 exports.getAssets = async (req, res) => {
   try {
@@ -138,6 +150,50 @@ exports.uploadAsset = async (req, res) => {
     
     // Handle folderId correctly - if it's null, undefined, "null", or empty string, set it to null
     const folderIdValue = folderId && folderId !== "null" && folderId !== "" ? folderId : null;
+    
+    // Check for duplicate filename in the same folder for the same user
+    const assetName = name || req.file.originalname;
+    const existingAsset = await Asset.findOne({
+      userId: effectiveUserId,
+      folderId: folderIdValue,
+      name: assetName
+    });
+    
+    if (existingAsset) {
+      // Clean up temp file
+      await unlinkAsync(req.file.path);
+      return res.status(409).json({ 
+        message: 'A file with this name already exists in this location',
+        conflict: 'filename',
+        existingAsset: {
+          id: existingAsset._id,
+          name: existingAsset.name,
+          createdAt: existingAsset.createdAt
+        }
+      });
+    }
+    
+    // Calculate file hash for content-based duplicate detection
+    const fileHash = await calculateFileHash(req.file.path);
+    const existingHashAsset = await Asset.findOne({
+      userId: effectiveUserId,
+      'metadata.fileHash': fileHash
+    });
+    
+    if (existingHashAsset) {
+      // Clean up temp file
+      await unlinkAsync(req.file.path);
+      return res.status(409).json({ 
+        message: 'This file content already exists in your assets',
+        conflict: 'content',
+        existingAsset: {
+          id: existingHashAsset._id,
+          name: existingHashAsset.name,
+          url: existingHashAsset.url,
+          createdAt: existingHashAsset.createdAt
+        }
+      });
+    }
     
     // Upload to Cloudinary
     const cloudinaryFolder = `users/${effectiveUserId}/${assetType}s`;
