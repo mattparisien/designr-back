@@ -20,6 +20,12 @@ router.post('/vector/process', assetController.processVectorJobs);
 // POST force re-vectorization of all assets
 router.post('/vector/revectorize', assetController.reVectorizeAssets);
 
+// POST analyze single asset with AI
+router.post('/:id/analyze', assetController.analyzeAsset);
+
+// POST batch analyze multiple assets with AI
+router.post('/analyze/batch', assetController.batchAnalyzeAssets);
+
 // GET file by filename (serve from GridFS)
 router.get('/file/:filename', assetController.serveAssetFile);
 
@@ -37,6 +43,12 @@ router.put('/:id', assetController.updateAsset);
 
 // DELETE asset
 router.delete('/:id', assetController.deleteAsset);
+
+// DELETE multiple assets
+router.delete('/bulk/delete', assetController.deleteMultipleAssets);
+
+// DELETE all assets for a user (requires confirmation)
+router.delete('/all/delete', assetController.deleteAllAssets);
 
 // PATCH move asset to a different folder
 router.patch('/:id/move', assetController.moveAsset);

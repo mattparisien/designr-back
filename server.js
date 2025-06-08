@@ -16,6 +16,8 @@ const { connectDB } = require('./config/db'); // Import connectDB from db.js
 const authController = require('./controllers/authController');
 const vectorStoreService = require('./services/vectorStore');
 const vectorJobProcessor = require('./services/vectorJobProcessor');
+const imageAnalysisService = require('./services/imageAnalysisService');
+const imageVectorService = require('./services/imageVectorService');
 
 // Create Express app
 const app = express();
@@ -70,6 +72,24 @@ connectDB() // Use connectDB from db.js
     } catch (error) {
       console.warn('Vector store service initialization failed:', error.message);
       console.warn('Vector search features will be disabled');
+    }
+    
+    // Initialize image analysis service
+    try {
+      await imageAnalysisService.initialize();
+      console.log('Image analysis service initialized');
+    } catch (error) {
+      console.warn('Image analysis service initialization failed:', error.message);
+      console.warn('Image semantic analysis will be disabled');
+    }
+    
+    // Initialize image vector service (hybrid approach)
+    try {
+      await imageVectorService.initialize();
+      console.log('Image vector service initialized with hybrid approach');
+    } catch (error) {
+      console.warn('Image vector service initialization failed:', error.message);
+      console.warn('Visual-focused vector generation will be disabled, falling back to text-only');
     }
     
     // Initialize Passport for Google OAuth

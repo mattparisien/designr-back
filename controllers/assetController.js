@@ -12,6 +12,7 @@ const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinaryUploader');
 const vectorStoreService = require('../services/vectorStore');
 const vectorJobProcessor = require('../services/vectorJobProcessor');
+const imageAnalysisService = require('../services/imageAnalysisService');
 
 // Determine asset type from MIME type or file extension
 const getAssetTypeFromMime = (mimeType, filename = '') => {
@@ -201,7 +202,18 @@ exports.uploadAsset = async (req, res) => {
     const cloudinaryFolder = `users/${effectiveUserId}/${assetType}s`;
     const uploadResult = await uploadToCloudinary(req.file.path, cloudinaryFolder);
     
-    // Create the asset record
+    // Initialize metadata with only basic info (fast)
+    const metadata = {
+      width: uploadResult.width,
+      height: uploadResult.height,
+      format: uploadResult.format,
+      resource_type: uploadResult.resource_type,
+      fileHash,
+      // Mark that AI analysis is pending for images
+      aiAnalysisPending: assetType === 'image'
+    };
+
+    // Create the asset record immediately (no waiting for AI analysis)
     const newAsset = new Asset({
       name: name || req.file.originalname,
       originalFilename: req.file.originalname,
@@ -215,12 +227,7 @@ exports.uploadAsset = async (req, res) => {
       cloudinaryUrl: uploadResult.secure_url,
       url: uploadResult.secure_url,
       tags: parsedTags,
-      metadata: {
-        width: uploadResult.width,
-        height: uploadResult.height,
-        format: uploadResult.format,
-        resource_type: uploadResult.resource_type
-      }
+      metadata
     });
     
     // For image files, Cloudinary automatically generates transformations
@@ -241,7 +248,7 @@ exports.uploadAsset = async (req, res) => {
     
     // Queue asset for vectorization in background
     try {
-      await vectorJobProcessor.queueVectorization(savedAsset._id, effectiveUserId);
+      vectorJobProcessor.enqueue('add', savedAsset._id, 'normal');
     } catch (vectorError) {
       console.warn('Failed to queue asset for vectorization:', vectorError);
       // Don't fail the upload, just log the warning
@@ -289,7 +296,7 @@ exports.updateAsset = async (req, res) => {
     // Re-queue asset for vectorization if metadata was updated
     if (updates.name || updates.tags) {
       try {
-        await vectorJobProcessor.queueVectorization(asset._id, asset.userId, 'medium');
+        vectorJobProcessor.enqueue('update', asset._id, 'normal');
       } catch (vectorError) {
         console.warn('Failed to queue asset for re-vectorization:', vectorError);
       }
@@ -347,7 +354,7 @@ exports.deleteAsset = async (req, res) => {
     // Delete from vector store if vectorized
     if (asset.vectorized) {
       try {
-        await vectorStoreService.deleteVector(asset._id.toString(), asset.userId);
+        await vectorStoreService.removeAsset(asset._id.toString());
       } catch (vectorError) {
         console.warn('Could not delete from vector store:', vectorError);
         // Continue anyway, as we still want to delete the database record
@@ -361,6 +368,133 @@ exports.deleteAsset = async (req, res) => {
   } catch (error) {
     console.error('Error deleting asset:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Delete multiple assets
+exports.deleteMultipleAssets = async (req, res) => {
+  try {
+    const { assetIds } = req.body;
+    
+    if (!Array.isArray(assetIds) || assetIds.length === 0) {
+      return res.status(400).json({ message: 'Asset IDs array is required' });
+    }
+    
+    const assets = await Asset.find({ _id: { $in: assetIds } });
+    
+    if (assets.length === 0) {
+      return res.status(404).json({ message: 'No assets found with provided IDs' });
+    }
+    
+    const deletionResults = {
+      successful: [],
+      failed: [],
+      cloudinaryErrors: [],
+      gridfsErrors: [],
+      vectorStoreErrors: []
+    };
+    
+    // Process each asset deletion
+    for (const asset of assets) {
+      try {
+        // Delete from Cloudinary if applicable
+        if (asset.cloudinaryId) {
+          try {
+            const resourceType = asset.type === 'image' ? 'image' : 
+                                asset.type === 'video' ? 'video' : 'raw';
+            await deleteFromCloudinary(asset.cloudinaryId, resourceType);
+          } catch (cloudinaryError) {
+            console.warn(`Could not delete asset ${asset._id} from Cloudinary:`, cloudinaryError);
+            deletionResults.cloudinaryErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: cloudinaryError.message
+            });
+          }
+        }
+        
+        // Delete GridFS file if applicable (for backward compatibility)
+        if (asset.gridFsId) {
+          try {
+            const gridFsBucket = getGridFsBucket();
+            await gridFsBucket.delete(new mongoose.Types.ObjectId(asset.gridFsId));
+            
+            // Also delete the thumbnail if it exists
+            if (asset.thumbnail && !asset.cloudinaryId) {
+              const thumbnailFilename = asset.thumbnail.split('/').pop();
+              const filesCollection = mongoose.connection.db.collection('uploads.files');
+              const fileInfo = await filesCollection.findOne({ filename: thumbnailFilename });
+              if (fileInfo && fileInfo._id) {
+                await gridFsBucket.delete(fileInfo._id);
+              }
+            }
+          } catch (gfsError) {
+            console.warn(`Could not delete GridFS file for asset ${asset._id}:`, gfsError);
+            deletionResults.gridfsErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: gfsError.message
+            });
+          }
+        }
+        
+        // Delete from vector store if vectorized
+        if (asset.vectorized) {
+          try {
+            await vectorStoreService.removeAsset(asset._id.toString());
+          } catch (vectorError) {
+            console.warn(`Could not delete asset ${asset._id} from vector store:`, vectorError);
+            deletionResults.vectorStoreErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: vectorError.message
+            });
+          }
+        }
+        
+        // Delete the database record
+        await Asset.findByIdAndDelete(asset._id);
+        
+        deletionResults.successful.push({
+          assetId: asset._id,
+          name: asset.name
+        });
+        
+      } catch (error) {
+        console.error(`Error deleting asset ${asset._id}:`, error);
+        deletionResults.failed.push({
+          assetId: asset._id,
+          name: asset.name,
+          error: error.message
+        });
+      }
+    }
+    
+    const response = {
+      message: `Deleted ${deletionResults.successful.length} of ${assets.length} assets`,
+      results: deletionResults,
+      summary: {
+        total: assets.length,
+        successful: deletionResults.successful.length,
+        failed: deletionResults.failed.length,
+        hasCloudinaryErrors: deletionResults.cloudinaryErrors.length > 0,
+        hasGridfsErrors: deletionResults.gridfsErrors.length > 0,
+        hasVectorStoreErrors: deletionResults.vectorStoreErrors.length > 0
+      }
+    };
+    
+    // Return appropriate status code based on results
+    if (deletionResults.failed.length === 0) {
+      res.status(200).json(response);
+    } else if (deletionResults.successful.length > 0) {
+      res.status(207).json(response); // Multi-status: some succeeded, some failed
+    } else {
+      res.status(500).json(response); // All failed
+    }
+    
+  } catch (error) {
+    console.error('Error in bulk asset deletion:', error);
+    res.status(500).json({ message: 'Server error during bulk deletion', error: error.message });
   }
 };
 
@@ -576,11 +710,13 @@ exports.searchAssetsByVector = async (req, res) => {
     // Use default user if no userId provided
     const effectiveUserId = userId || 'default-user';
     
-    const results = await vectorStoreService.searchSimilarAssets(
+    const results = await vectorStoreService.searchAssets(
       query, 
       effectiveUserId, 
-      parseInt(limit), 
-      parseFloat(threshold)
+      {
+        limit: parseInt(limit), 
+        threshold: parseFloat(threshold)
+      }
     );
     
     // Get full asset details for the results
@@ -628,11 +764,10 @@ exports.findSimilarAssets = async (req, res) => {
       return res.status(400).json({ message: 'Asset has not been vectorized yet' });
     }
     
-    const results = await vectorStoreService.findSimilarAssets(
+    const results = await vectorStoreService.getSimilarAssets(
       id, 
       asset.userId, 
-      parseInt(limit), 
-      parseFloat(threshold)
+      parseInt(limit)
     );
     
     // Get full asset details for the results
@@ -691,7 +826,7 @@ exports.getVectorStats = async (req, res) => {
         vectorizationRate: totalAssets > 0 ? (vectorizedAssets / totalAssets * 100).toFixed(2) : 0
       },
       vectorStore: vectorStats,
-      queueStats: await vectorJobProcessor.getQueueStats()
+      queueStats: vectorJobProcessor.getStatus()
     });
   } catch (error) {
     console.error('Error getting vector stats:', error);
@@ -705,7 +840,7 @@ exports.reVectorizeAssets = async (req, res) => {
     const { userId } = req.body;
     const effectiveUserId = userId || 'default-user';
     
-    const result = await vectorJobProcessor.processAllUnvectorizedAssets(effectiveUserId, true);
+    const result = await vectorJobProcessor.processAllUnvectorized();
     
     res.status(200).json({
       message: 'Re-vectorization initiated',
@@ -723,7 +858,7 @@ exports.processVectorJobs = async (req, res) => {
     const { userId } = req.query;
     const effectiveUserId = userId || 'default-user';
     
-    const result = await vectorJobProcessor.processAllUnvectorizedAssets(effectiveUserId);
+    const result = await vectorJobProcessor.processAllUnvectorized();
     
     res.status(200).json({
       message: 'Vectorization processing initiated',
@@ -732,5 +867,382 @@ exports.processVectorJobs = async (req, res) => {
   } catch (error) {
     console.error('Error processing vector jobs:', error);
     res.status(500).json({ message: 'Failed to process vector jobs', error: error.message });
+  }
+};
+
+// Delete all assets for a user
+exports.deleteAllAssets = async (req, res) => {
+  try {
+    const { userId, confirm } = req.body;
+    
+    // Safety check - require explicit confirmation
+    if (confirm !== 'DELETE_ALL_ASSETS') {
+      return res.status(400).json({ 
+        message: 'This action requires confirmation. Set confirm: "DELETE_ALL_ASSETS" in request body.' 
+      });
+    }
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    const assets = await Asset.find({ userId: effectiveUserId });
+    
+    if (assets.length === 0) {
+      return res.status(200).json({ 
+        message: 'No assets found for this user',
+        results: {
+          successful: [],
+          failed: [],
+          cloudinaryErrors: [],
+          gridfsErrors: [],
+          vectorStoreErrors: []
+        },
+        summary: {
+          total: 0,
+          successful: 0,
+          failed: 0,
+          hasCloudinaryErrors: false,
+          hasGridfsErrors: false,
+          hasVectorStoreErrors: false
+        }
+      });
+    }
+    
+    const deletionResults = {
+      successful: [],
+      failed: [],
+      cloudinaryErrors: [],
+      gridfsErrors: [],
+      vectorStoreErrors: []
+    };
+    
+    console.log(`Starting deletion of ${assets.length} assets for user: ${effectiveUserId}`);
+    
+    // Process each asset deletion
+    for (const asset of assets) {
+      try {
+        // Delete from Cloudinary if applicable
+        if (asset.cloudinaryId) {
+          try {
+            const resourceType = asset.type === 'image' ? 'image' : 
+                                asset.type === 'video' ? 'video' : 'raw';
+            await deleteFromCloudinary(asset.cloudinaryId, resourceType);
+          } catch (cloudinaryError) {
+            console.warn(`Could not delete asset ${asset._id} from Cloudinary:`, cloudinaryError);
+            deletionResults.cloudinaryErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: cloudinaryError.message
+            });
+          }
+        }
+        
+        // Delete GridFS file if applicable (for backward compatibility)
+        if (asset.gridFsId) {
+          try {
+            const gridFsBucket = getGridFsBucket();
+            await gridFsBucket.delete(new mongoose.Types.ObjectId(asset.gridFsId));
+            
+            // Also delete the thumbnail if it exists
+            if (asset.thumbnail && !asset.cloudinaryId) {
+              const thumbnailFilename = asset.thumbnail.split('/').pop();
+              const filesCollection = mongoose.connection.db.collection('uploads.files');
+              const fileInfo = await filesCollection.findOne({ filename: thumbnailFilename });
+              if (fileInfo && fileInfo._id) {
+                await gridFsBucket.delete(fileInfo._id);
+              }
+            }
+          } catch (gfsError) {
+            console.warn(`Could not delete GridFS file for asset ${asset._id}:`, gfsError);
+            deletionResults.gridfsErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: gfsError.message
+            });
+          }
+        }
+        
+        // Delete from vector store if vectorized
+        if (asset.vectorized) {
+          try {
+            await vectorStoreService.removeAsset(asset._id.toString());
+          } catch (vectorError) {
+            console.warn(`Could not delete asset ${asset._id} from vector store:`, vectorError);
+            deletionResults.vectorStoreErrors.push({
+              assetId: asset._id,
+              name: asset.name,
+              error: vectorError.message
+            });
+          }
+        }
+        
+        // Delete the database record
+        await Asset.findByIdAndDelete(asset._id);
+        
+        deletionResults.successful.push({
+          assetId: asset._id,
+          name: asset.name
+        });
+        
+      } catch (error) {
+        console.error(`Error deleting asset ${asset._id}:`, error);
+        deletionResults.failed.push({
+          assetId: asset._id,
+          name: asset.name,
+          error: error.message
+        });
+      }
+    }
+    
+    // Also clear any remaining vectors for this user from vector store
+    // TODO: Implement clearUserVectors method in vectorStoreService
+    // try {
+    //   await vectorStoreService.clearUserVectors(effectiveUserId);
+    // } catch (vectorClearError) {
+    //   console.warn('Error clearing user vectors:', vectorClearError);
+    // }
+    
+    const response = {
+      message: `Deleted ${deletionResults.successful.length} of ${assets.length} assets for user: ${effectiveUserId}`,
+      userId: effectiveUserId,
+      results: deletionResults,
+      summary: {
+        total: assets.length,
+        successful: deletionResults.successful.length,
+        failed: deletionResults.failed.length,
+        hasCloudinaryErrors: deletionResults.cloudinaryErrors.length > 0,
+        hasGridfsErrors: deletionResults.gridfsErrors.length > 0,
+        hasVectorStoreErrors: deletionResults.vectorStoreErrors.length > 0
+      }
+    };
+    
+    console.log(`Completed deletion for user ${effectiveUserId}:`, response.summary);
+    
+    // Return appropriate status code based on results
+    if (deletionResults.failed.length === 0) {
+      res.status(200).json(response);
+    } else if (deletionResults.successful.length > 0) {
+      res.status(207).json(response); // Multi-status: some succeeded, some failed
+    } else {
+      res.status(500).json(response); // All failed
+    }
+    
+  } catch (error) {
+    console.error('Error in delete all assets:', error);
+    res.status(500).json({ message: 'Server error during asset deletion', error: error.message });
+  }
+};
+
+// Manually trigger image analysis for existing assets
+exports.analyzeAsset = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const asset = await Asset.findById(id);
+    if (!asset) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+    
+    // Only analyze images
+    if (asset.type !== 'image') {
+      return res.status(400).json({ message: 'Asset is not an image' });
+    }
+    
+    // Check if asset has a URL to analyze
+    const imageUrl = asset.cloudinaryUrl || asset.url;
+    if (!imageUrl) {
+      return res.status(400).json({ message: 'Asset has no accessible URL for analysis' });
+    }
+    
+    try {
+      console.log('Starting manual AI analysis for asset:', asset.name);
+      const analysis = await imageAnalysisService.analyzeImage(imageUrl);
+      
+      if (analysis) {
+        // Update asset metadata with analysis results
+        const updatedMetadata = {
+          ...asset.metadata,
+          aiAnalysis: analysis,
+          aiDescription: analysis.description,
+          detectedObjects: analysis.objects || [],
+          dominantColors: analysis.colors || [],
+          extractedText: analysis.text || '',
+          visualThemes: analysis.themes || [],
+          mood: analysis.mood || '',
+          style: analysis.style || '',
+          categories: analysis.categories || [],
+          composition: analysis.composition || '',
+          lighting: analysis.lighting || '',
+          setting: analysis.setting || ''
+        };
+        
+        // Update the asset
+        const updatedAsset = await Asset.findByIdAndUpdate(
+          id,
+          { 
+            metadata: updatedMetadata,
+            vectorized: false // Mark for re-vectorization
+          },
+          { new: true }
+        );
+        
+        // Queue for re-vectorization to include new semantic data
+        try {
+          vectorJobProcessor.enqueue('update', id, 'normal');
+        } catch (vectorError) {
+          console.warn('Failed to queue asset for re-vectorization:', vectorError);
+        }
+        
+        console.log('AI analysis completed for asset:', {
+          assetId: id,
+          objects: analysis.objects?.length || 0,
+          colors: analysis.colors?.length || 0,
+          themes: analysis.themes?.length || 0
+        });
+        
+        res.status(200).json({
+          message: 'Image analysis completed successfully',
+          asset: updatedAsset,
+          analysis: {
+            objectsDetected: analysis.objects?.length || 0,
+            colorsIdentified: analysis.colors?.length || 0,
+            themesExtracted: analysis.themes?.length || 0,
+            hasDescription: !!analysis.description,
+            hasText: !!analysis.text
+          }
+        });
+      } else {
+        res.status(500).json({ message: 'Image analysis failed' });
+      }
+    } catch (analysisError) {
+      console.error('Error during manual image analysis:', analysisError);
+      res.status(500).json({ 
+        message: 'Image analysis failed', 
+        error: analysisError.message 
+      });
+    }
+  } catch (error) {
+    console.error('Error in manual image analysis:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Batch analyze multiple assets
+exports.batchAnalyzeAssets = async (req, res) => {
+  try {
+    const { userId, limit = 10, forceReanalyze = false } = req.body;
+    const effectiveUserId = userId || 'default-user';
+    
+    // Find image assets that haven't been analyzed yet (or force re-analyze)
+    const filter = {
+      userId: effectiveUserId,
+      type: 'image',
+      $or: [
+        { cloudinaryUrl: { $exists: true, $ne: null } },
+        { url: { $exists: true, $ne: null } }
+      ]
+    };
+    
+    if (!forceReanalyze) {
+      filter['metadata.aiAnalysis'] = { $exists: false };
+    }
+    
+    const assetsToAnalyze = await Asset.find(filter).limit(limit);
+    
+    if (assetsToAnalyze.length === 0) {
+      return res.status(200).json({
+        message: 'No assets found for analysis',
+        processed: 0,
+        successful: 0,
+        failed: 0
+      });
+    }
+    
+    console.log(`Starting batch analysis of ${assetsToAnalyze.length} images`);
+    
+    const results = {
+      processed: assetsToAnalyze.length,
+      successful: 0,
+      failed: 0,
+      details: []
+    };
+    
+    // Process each asset
+    for (const asset of assetsToAnalyze) {
+      try {
+        const imageUrl = asset.cloudinaryUrl || asset.url;
+        const analysis = await imageAnalysisService.analyzeImage(imageUrl);
+        
+        if (analysis) {
+          // Update asset metadata
+          const updatedMetadata = {
+            ...asset.metadata,
+            aiAnalysis: analysis,
+            aiDescription: analysis.description,
+            detectedObjects: analysis.objects || [],
+            dominantColors: analysis.colors || [],
+            extractedText: analysis.text || '',
+            visualThemes: analysis.themes || [],
+            mood: analysis.mood || '',
+            style: analysis.style || '',
+            categories: analysis.categories || [],
+            composition: analysis.composition || '',
+            lighting: analysis.lighting || '',
+            setting: analysis.setting || ''
+          };
+          
+          await Asset.findByIdAndUpdate(asset._id, {
+            metadata: updatedMetadata,
+            vectorized: false // Mark for re-vectorization
+          });
+          
+          // Queue for re-vectorization
+          try {
+            vectorJobProcessor.enqueue('update', asset._id, 'normal');
+          } catch (vectorError) {
+            console.warn(`Failed to queue asset ${asset._id} for re-vectorization:`, vectorError);
+          }
+          
+          results.successful++;
+          results.details.push({
+            assetId: asset._id,
+            name: asset.name,
+            status: 'success',
+            objectsDetected: analysis.objects?.length || 0,
+            colorsIdentified: analysis.colors?.length || 0
+          });
+        } else {
+          results.failed++;
+          results.details.push({
+            assetId: asset._id,
+            name: asset.name,
+            status: 'failed',
+            error: 'Analysis returned null'
+          });
+        }
+      } catch (error) {
+        console.error(`Error analyzing asset ${asset._id}:`, error);
+        results.failed++;
+        results.details.push({
+          assetId: asset._id,
+          name: asset.name,
+          status: 'failed',
+          error: error.message
+        });
+      }
+      
+      // Add a small delay to avoid overwhelming the API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    console.log(`Batch analysis completed: ${results.successful} successful, ${results.failed} failed`);
+    
+    res.status(200).json({
+      message: 'Batch analysis completed',
+      ...results
+    });
+  } catch (error) {
+    console.error('Error in batch analysis:', error);
+    res.status(500).json({ message: 'Batch analysis failed', error: error.message });
   }
 };

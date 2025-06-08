@@ -37,7 +37,7 @@ async function vectorizeAllAssets(userId = 'default-user', force = false) {
   console.log(`Vectorizing all assets for user: ${userId}${force ? ' (forced re-vectorization)' : ''}...`);
   
   try {
-    const result = await vectorJobProcessor.processAllUnvectorizedAssets(userId, force);
+    const result = await vectorJobProcessor.processAllUnvectorized();
     console.log('✅ Vectorization completed:');
     console.log(`   - Processed: ${result.processed} assets`);
     console.log(`   - Failed: ${result.failed} assets`);
@@ -62,7 +62,7 @@ async function checkStatus(userId = 'default-user') {
     console.log(`   - Pending: ${pendingAssets}`);
     console.log(`   - Progress: ${totalAssets > 0 ? ((vectorizedAssets / totalAssets) * 100).toFixed(2) : 0}%`);
     
-    const queueStats = await vectorJobProcessor.getQueueStats();
+    const queueStats = vectorJobProcessor.getStatus();
     console.log('🔄 Queue Status:');
     console.log(`   - Jobs in queue: ${queueStats.totalJobs}`);
     console.log(`   - Currently processing: ${queueStats.processing}`);
@@ -96,7 +96,7 @@ async function searchAssets(query, userId = 'default-user', limit = 10) {
   console.log(`Searching for: "${query}" (user: ${userId})...`);
   
   try {
-    const results = await vectorStoreService.searchSimilarAssets(query, userId, limit);
+    const results = await vectorStoreService.searchAssets(query, userId, { limit });
     
     if (results.length === 0) {
       console.log('No results found');

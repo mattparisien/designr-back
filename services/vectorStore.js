@@ -124,6 +124,64 @@ class VectorStoreService {
       if (asset.metadata.description) parts.push(asset.metadata.description);
       if (asset.metadata.alt) parts.push(asset.metadata.alt);
       if (asset.metadata.keywords) parts.push(...asset.metadata.keywords);
+      
+      // AI-generated image content analysis
+      if (asset.type === 'image') {
+        // Main AI description
+        if (asset.metadata.aiDescription) {
+          parts.push(asset.metadata.aiDescription);
+        }
+        
+        // Detected objects
+        if (asset.metadata.detectedObjects && Array.isArray(asset.metadata.detectedObjects)) {
+          parts.push(...asset.metadata.detectedObjects);
+        }
+        
+        // Dominant colors
+        if (asset.metadata.dominantColors && Array.isArray(asset.metadata.dominantColors)) {
+          parts.push(...asset.metadata.dominantColors);
+        }
+        
+        // Text extracted from image (OCR)
+        if (asset.metadata.extractedText) {
+          parts.push(asset.metadata.extractedText);
+        }
+        
+        // Visual themes and concepts
+        if (asset.metadata.visualThemes && Array.isArray(asset.metadata.visualThemes)) {
+          parts.push(...asset.metadata.visualThemes);
+        }
+        
+        // Mood and atmosphere
+        if (asset.metadata.mood) {
+          parts.push(asset.metadata.mood);
+        }
+        
+        // Artistic style
+        if (asset.metadata.style) {
+          parts.push(asset.metadata.style);
+        }
+        
+        // Categories for broader classification
+        if (asset.metadata.categories && Array.isArray(asset.metadata.categories)) {
+          parts.push(...asset.metadata.categories);
+        }
+        
+        // Composition description
+        if (asset.metadata.composition) {
+          parts.push(asset.metadata.composition);
+        }
+        
+        // Lighting conditions
+        if (asset.metadata.lighting) {
+          parts.push(asset.metadata.lighting);
+        }
+        
+        // Setting or environment
+        if (asset.metadata.setting) {
+          parts.push(asset.metadata.setting);
+        }
+      }
     }
 
     return parts.filter(Boolean).join(' ').toLowerCase();
@@ -137,8 +195,20 @@ class VectorStoreService {
         return;
       }
 
-      const searchableText = this.createSearchableText(asset);
-      const embedding = await this.generateEmbedding(searchableText);
+      let embedding;
+      let vectorSource = 'text';
+      
+      // Use hybrid vector if available (for images with AI analysis)
+      if (asset.type === 'image' && asset.metadata?.hybridVector) {
+        embedding = asset.metadata.hybridVector;
+        vectorSource = 'hybrid';
+        console.log(`Using hybrid vector for image: ${asset.name}`);
+      } else {
+        // Fall back to text-based embedding
+        const searchableText = this.createSearchableText(asset);
+        embedding = await this.generateEmbedding(searchableText);
+        vectorSource = 'text';
+      }
 
       const vector = {
         id: asset._id.toString(),
@@ -150,14 +220,22 @@ class VectorStoreService {
           type: asset.type,
           mimeType: asset.mimeType,
           tags: asset.tags || [],
-          folderId: asset.folderId ? asset.folderId.toString() : null,
-          createdAt: asset.createdAt,
-          searchableText: searchableText
+          folderId: asset.folderId ? asset.folderId.toString() : 'root',
+          createdAt: asset.createdAt ? asset.createdAt.toISOString() : new Date().toISOString(),
+          searchableText: this.createSearchableText(asset),
+          vectorSource: vectorSource, // Track which type of vector this is
+          
+          // Add AI analysis metadata for better search results
+          ...(asset.metadata?.aiDescription && { aiDescription: asset.metadata.aiDescription }),
+          ...(asset.metadata?.mood && { mood: asset.metadata.mood }),
+          ...(asset.metadata?.style && { style: asset.metadata.style }),
+          ...(asset.metadata?.dominantColors && { dominantColors: asset.metadata.dominantColors.slice(0, 3) }), // Top 3 colors
+          ...(asset.metadata?.visualThemes && { visualThemes: asset.metadata.visualThemes.slice(0, 3) }) // Top 3 themes
         }
       };
 
       await this.index.upsert([vector]);
-      console.log(`Asset ${asset._id} added to vector store`);
+      console.log(`Asset ${asset._id} added to vector store using ${vectorSource} embedding`);
     } catch (error) {
       console.error('Error adding asset to vector store:', error);
       // Don't throw error - allow normal asset operations to continue
@@ -223,7 +301,7 @@ class VectorStoreService {
       }
 
       if (folderId !== null) {
-        filter.folderId = folderId ? { $eq: folderId } : { $eq: null };
+        filter.folderId = folderId ? { $eq: folderId } : { $eq: 'root' };
       }
 
       // Perform vector search
@@ -317,8 +395,8 @@ class VectorStoreService {
               type: asset.type,
               mimeType: asset.mimeType,
               tags: asset.tags || [],
-              folderId: asset.folderId ? asset.folderId.toString() : null,
-              createdAt: asset.createdAt,
+              folderId: asset.folderId ? asset.folderId.toString() : 'root',
+              createdAt: asset.createdAt ? asset.createdAt.toISOString() : new Date().toISOString(),
               searchableText: searchableText
             }
           });
