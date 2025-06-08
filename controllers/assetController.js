@@ -701,6 +701,7 @@ exports.configureMulter = () => {
 // Vector search assets by semantic similarity
 exports.searchAssetsByVector = async (req, res) => {
   try {
+    console.log('hey!')
     const { query, userId, limit = 10, threshold = 0.7 } = req.query;
     
     if (!query) {
@@ -744,6 +745,7 @@ exports.searchAssetsByVector = async (req, res) => {
       total: enrichedResults.length
     });
   } catch (error) {
+    console.log('theres been an error!')
     console.error('Error in vector search:', error);
     res.status(500).json({ message: 'Vector search failed', error: error.message });
   }
