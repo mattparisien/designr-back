@@ -252,7 +252,7 @@ exports.uploadAsset = async (req, res) => {
         // For PDFs, first extract content, then vectorize
         vectorJobProcessor.enqueue('extractPDF', savedAsset._id, 'high');
         console.log(`Queued PDF extraction for asset ${savedAsset._id}`);
-      } else if (assetType === 'document' && (correctedMimeType.includes('csv') || filename.endsWith('.csv'))) {
+      } else if (assetType === 'document' && (correctedMimeType.includes('csv') || req.file.originalname.endsWith('.csv'))) {
         // For CSVs, first extract content, then vectorize
         vectorJobProcessor.enqueue('extractCSV', savedAsset._id, 'high');
         console.log(`Queued CSV extraction for asset ${savedAsset._id}`);
