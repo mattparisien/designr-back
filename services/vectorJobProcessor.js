@@ -564,8 +564,15 @@ class VectorJobProcessor {
     try {
       console.log(`Starting CSV extraction for: ${asset.name}`);
 
-      if (asset.type !== 'document' || !asset.mimeType.includes('csv')) {
-        console.log(`Asset ${asset.name} is not a CSV, skipping extraction`);
+      // Check if asset is a CSV file by MIME type or file extension
+      const isCSV = asset.type === 'document' && (
+        asset.mimeType.includes('csv') || 
+        asset.originalFilename?.toLowerCase().endsWith('.csv') ||
+        asset.name?.toLowerCase().endsWith('.csv')
+      );
+
+      if (!isCSV) {
+        console.log(`Asset ${asset.name} is not a CSV, skipping extraction (type: ${asset.type}, mimeType: ${asset.mimeType})`);
         return;
       }
 
