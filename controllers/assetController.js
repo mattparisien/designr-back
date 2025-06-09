@@ -20,7 +20,7 @@ const getAssetTypeFromMime = (mimeType, filename = '') => {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
-  if (mimeType.match(/pdf|word|excel|powerpoint|text|rtf|doc|xls|ppt|pages|numbers|keynote/i)) return 'document';
+  if (mimeType.match(/pdf|word|excel|powerpoint|text|rtf|doc|xls|ppt|pages|numbers|keynote|csv/i)) return 'document';
   
   // If MIME type is generic (like application/octet-stream), check file extension
   if (mimeType === 'application/octet-stream' || mimeType === 'binary/octet-stream') {
@@ -28,7 +28,7 @@ const getAssetTypeFromMime = (mimeType, filename = '') => {
     if (ext.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return 'image';
     if (ext.match(/\.(mp4|mov|avi|webm)$/)) return 'video';
     if (ext.match(/\.(mp3|wav|ogg|m4a)$/)) return 'audio';
-    if (ext.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/)) return 'document';
+    if (ext.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|csv)$/)) return 'document';
   }
   
   return 'other';

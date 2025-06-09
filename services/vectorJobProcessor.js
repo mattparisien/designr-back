@@ -4,6 +4,8 @@ const imageAnalysisService = require('./imageAnalysisService');
 const imageVectorService = require('./imageVectorService');
 const pdfProcessingService = require('./pdfProcessingService');
 const documentChunkingService = require('./documentChunkingService');
+const csvProcessingService = require('./csvProcessingService');
+const csvChunkingService = require('./csvChunkingService');
 
 class VectorJobProcessor {
   constructor() {
@@ -158,6 +160,12 @@ class VectorJobProcessor {
         break;
       case 'vectorizePDF':
         await this.processPDFVectorization(asset);
+        break;
+      case 'extractCSV':
+        await this.processCSVExtraction(asset);
+        break;
+      case 'vectorizeCSV':
+        await this.processCSVVectorization(asset);
         break;
       default:
         console.error(`Unknown job type: ${job.type}`);
@@ -540,6 +548,143 @@ class VectorJobProcessor {
 
     } catch (error) {
       console.error(`Error in PDF vectorization for ${asset._id}:`, error);
+      
+      // Mark vectorization as failed
+      await Asset.findByIdAndUpdate(asset._id, {
+        'metadata.vectorizationFailed': true,
+        'metadata.vectorizationError': error.message
+      });
+      
+      throw error;
+    }
+  }
+
+  // Process CSV content extraction
+  async processCSVExtraction(asset) {
+    try {
+      console.log(`Starting CSV extraction for: ${asset.name}`);
+
+      if (asset.type !== 'document' || !asset.mimeType.includes('csv')) {
+        console.log(`Asset ${asset.name} is not a CSV, skipping extraction`);
+        return;
+      }
+
+      // Check if we have a file path to work with
+      let filePath = null;
+      
+      // Try to get file from Cloudinary URL or local path
+      if (asset.cloudinaryUrl) {
+        // For Cloudinary files, we'll need to download temporarily
+        filePath = await this.downloadTempFile(asset.cloudinaryUrl, asset.name);
+      } else if (asset.url && asset.url.startsWith('/')) {
+        // Local file path
+        filePath = asset.url;
+      }
+
+      if (!filePath) {
+        console.warn(`No accessible file path for CSV: ${asset.name}`);
+        // Mark extraction as failed but don't throw
+        await Asset.findByIdAndUpdate(asset._id, {
+          'metadata.extractionFailed': true,
+          'metadata.extractionError': 'No accessible file path'
+        });
+        return;
+      }
+
+      try {
+        // Validate CSV file
+        await csvProcessingService.validateCSV(filePath);
+
+        // Extract content from CSV
+        const extractedData = await csvProcessingService.extractCSVData(filePath);
+
+        // Update asset with extracted content
+        const updatedMetadata = {
+          ...asset.metadata,
+          extractedContent: extractedData,
+          csvProcessingCompleted: new Date(),
+          contentExtractionPending: false
+        };
+
+        await Asset.findByIdAndUpdate(asset._id, {
+          metadata: updatedMetadata
+        });
+
+        console.log(`CSV extraction completed for ${asset.name}: ${extractedData.metadata.rowCount} rows, ${extractedData.metadata.columnCount} columns`);
+
+        // Queue for vectorization
+        this.enqueue('vectorizeCSV', asset._id, 'normal');
+
+      } catch (extractionError) {
+        console.error(`CSV extraction failed for ${asset.name}:`, extractionError);
+        
+        // Mark extraction as failed
+        await Asset.findByIdAndUpdate(asset._id, {
+          'metadata.extractionFailed': true,
+          'metadata.extractionError': extractionError.message,
+          'metadata.contentExtractionPending': false
+        });
+      } finally {
+        // Clean up temporary file if we downloaded one
+        if (filePath && filePath.includes('temp-uploads')) {
+          try {
+            const fs = require('fs');
+            fs.unlinkSync(filePath);
+          } catch (cleanupError) {
+            console.warn('Failed to cleanup temp file:', cleanupError);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error in CSV extraction for ${asset._id}:`, error);
+      throw error;
+    }
+  }
+
+  // Process CSV vectorization with chunking
+  async processCSVVectorization(asset) {
+    try {
+      console.log(`Starting CSV vectorization for: ${asset.name}`);
+
+      if (!asset.metadata?.extractedContent) {
+        console.warn(`No extracted content found for CSV: ${asset.name}`);
+        // Try to trigger extraction first
+        this.enqueue('extractCSV', asset._id, 'high');
+        return;
+      }
+
+      const extractedData = asset.metadata.extractedContent;
+
+      // Create chunks using CSV-specific chunking
+      const chunks = await csvChunkingService.chunkCSVData(extractedData, asset._id.toString());
+
+      console.log(`Created ${chunks.length} chunks for CSV: ${asset.name}`);
+
+      // Add chunks to vector store
+      await vectorStoreService.addDocumentWithChunks(asset, chunks);
+
+      // Update asset metadata with chunking info
+      const chunkingMetadata = {
+        totalChunks: chunks.length,
+        chunkingStrategy: 'csv_hybrid',
+        avgChunkSize: Math.round(chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length),
+        vectorizationCompleted: new Date(),
+        columnCount: extractedData.metadata.columnCount,
+        rowCount: extractedData.metadata.rowCount
+      };
+
+      await Asset.findByIdAndUpdate(asset._id, {
+        vectorized: true,
+        vectorLastUpdated: new Date(),
+        'metadata.extractedContent.totalChunks': chunkingMetadata.totalChunks,
+        'metadata.extractedContent.chunkingStrategy': chunkingMetadata.chunkingStrategy,
+        'metadata.extractedContent.avgChunkSize': chunkingMetadata.avgChunkSize
+      });
+
+      console.log(`CSV vectorization completed for ${asset.name}: ${chunks.length} chunks processed`);
+
+    } catch (error) {
+      console.error(`Error in CSV vectorization for ${asset._id}:`, error);
       
       // Mark vectorization as failed
       await Asset.findByIdAndUpdate(asset._id, {
