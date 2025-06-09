@@ -701,7 +701,6 @@ exports.configureMulter = () => {
 // Vector search assets by semantic similarity
 exports.searchAssetsByVector = async (req, res) => {
   try {
-    console.log('hey!')
     const { query, userId, limit = 10, threshold = 0.7 } = req.query;
     
     if (!query) {
@@ -719,6 +718,8 @@ exports.searchAssetsByVector = async (req, res) => {
         threshold: parseFloat(threshold)
       }
     );
+
+    console.log(results);
     
     // Get full asset details for the results
     const assetIds = results.map(r => r.assetId);
@@ -732,7 +733,7 @@ exports.searchAssetsByVector = async (req, res) => {
       const result = results.find(r => r.assetId === asset._id.toString());
       return {
         ...asset.toObject(),
-        similarity: result?.similarity || 0
+        similarity: result?.score || 0
       };
     });
     
@@ -784,7 +785,7 @@ exports.findSimilarAssets = async (req, res) => {
       const result = results.find(r => r.assetId === similarAsset._id.toString());
       return {
         ...similarAsset.toObject(),
-        similarity: result?.similarity || 0
+        similarity: result?.score || 0
       };
     });
     
