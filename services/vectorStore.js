@@ -334,6 +334,24 @@ class VectorStoreService {
     }
   }
 
+  // Add document with chunks - combined method for easier usage
+  async addDocumentWithChunks(asset, chunks) {
+    try {
+      console.log(`Adding document with ${chunks.length} chunks for asset: ${asset.name}`);
+      
+      // Add the asset to vector store
+      await this.addAsset(asset);
+      
+      // Add all chunks to vector store
+      await this.addDocumentChunks(chunks, asset);
+      
+      console.log(`Successfully added asset and ${chunks.length} chunks to vector store`);
+    } catch (error) {
+      console.error('Error adding document with chunks to vector store:', error);
+      throw error;
+    }
+  }
+
   // Update asset in vector store
   async updateAsset(asset) {
     try {

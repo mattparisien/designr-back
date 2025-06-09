@@ -252,6 +252,10 @@ exports.uploadAsset = async (req, res) => {
         // For PDFs, first extract content, then vectorize
         vectorJobProcessor.enqueue('extractPDF', savedAsset._id, 'high');
         console.log(`Queued PDF extraction for asset ${savedAsset._id}`);
+      } else if (assetType === 'document' && (correctedMimeType.includes('csv') || filename.endsWith('.csv'))) {
+        // For CSVs, first extract content, then vectorize
+        vectorJobProcessor.enqueue('extractCSV', savedAsset._id, 'high');
+        console.log(`Queued CSV extraction for asset ${savedAsset._id}`);
       } else {
         // For other assets, use standard vectorization
         vectorJobProcessor.enqueue('add', savedAsset._id, 'normal');
@@ -363,10 +367,15 @@ exports.deleteAsset = async (req, res) => {
       try {
         await vectorStoreService.removeAsset(asset._id.toString());
         
-        // Also remove document chunks if this is a PDF
-        if (asset.type === 'document' && asset.mimeType === 'application/pdf') {
-          await vectorStoreService.removeDocumentChunks(asset._id.toString());
-          console.log(`Removed document chunks for PDF asset ${asset._id}`);
+        // Also remove document chunks if this is a document with chunked content
+        if (asset.type === 'document') {
+          if (asset.mimeType === 'application/pdf') {
+            await vectorStoreService.removeDocumentChunks(asset._id.toString());
+            console.log(`Removed document chunks for PDF asset ${asset._id}`);
+          } else if (asset.mimeType.includes('csv') || asset.originalFilename?.endsWith('.csv')) {
+            await vectorStoreService.removeDocumentChunks(asset._id.toString());
+            console.log(`Removed document chunks for CSV asset ${asset._id}`);
+          }
         }
       } catch (vectorError) {
         console.warn('Could not delete from vector store:', vectorError);
@@ -455,6 +464,17 @@ exports.deleteMultipleAssets = async (req, res) => {
         if (asset.vectorized) {
           try {
             await vectorStoreService.removeAsset(asset._id.toString());
+            
+            // Also remove document chunks if this is a document with chunked content
+            if (asset.type === 'document') {
+              if (asset.mimeType === 'application/pdf') {
+                await vectorStoreService.removeDocumentChunks(asset._id.toString());
+                console.log(`Removed document chunks for PDF asset ${asset._id}`);
+              } else if (asset.mimeType.includes('csv') || asset.originalFilename?.endsWith('.csv')) {
+                await vectorStoreService.removeDocumentChunks(asset._id.toString());
+                console.log(`Removed document chunks for CSV asset ${asset._id}`);
+              }
+            }
           } catch (vectorError) {
             console.warn(`Could not delete asset ${asset._id} from vector store:`, vectorError);
             deletionResults.vectorStoreErrors.push({
@@ -638,7 +658,7 @@ exports.configureMulter = () => {
     });
     
     // Define allowed file extensions
-    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx)$/i;
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx|csv)$/i;
     
     // Define allowed MIME types (including common generic ones)
     const allowedMimeTypes = [
@@ -651,6 +671,8 @@ exports.configureMulter = () => {
       'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // CSV files
+      'text/csv', 'application/csv', 'text/comma-separated-values',
       // Generic types that browsers sometimes send
       'application/octet-stream', 'binary/octet-stream'
     ];
@@ -982,6 +1004,17 @@ exports.deleteAllAssets = async (req, res) => {
         if (asset.vectorized) {
           try {
             await vectorStoreService.removeAsset(asset._id.toString());
+            
+            // Also remove document chunks if this is a document with chunked content
+            if (asset.type === 'document') {
+              if (asset.mimeType === 'application/pdf') {
+                await vectorStoreService.removeDocumentChunks(asset._id.toString());
+                console.log(`Removed document chunks for PDF asset ${asset._id}`);
+              } else if (asset.mimeType.includes('csv') || asset.originalFilename?.endsWith('.csv')) {
+                await vectorStoreService.removeDocumentChunks(asset._id.toString());
+                console.log(`Removed document chunks for CSV asset ${asset._id}`);
+              }
+            }
           } catch (vectorError) {
             console.warn(`Could not delete asset ${asset._id} from vector store:`, vectorError);
             deletionResults.vectorStoreErrors.push({
