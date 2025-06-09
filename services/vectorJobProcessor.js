@@ -563,6 +563,14 @@ class VectorJobProcessor {
   async processCSVExtraction(asset) {
     try {
       console.log(`Starting CSV extraction for: ${asset.name}`);
+      console.log(`Asset details:`, {
+        id: asset._id,
+        name: asset.name,
+        type: asset.type,
+        mimeType: asset.mimeType,
+        url: asset.url,
+        cloudinaryUrl: asset.cloudinaryUrl
+      });
 
       // Check if asset is a CSV file by MIME type or file extension
       const isCSV = asset.type === 'document' && (
@@ -570,6 +578,8 @@ class VectorJobProcessor {
         asset.originalFilename?.toLowerCase().endsWith('.csv') ||
         asset.name?.toLowerCase().endsWith('.csv')
       );
+
+      console.log(`CSV check result: ${isCSV}`);
 
       if (!isCSV) {
         console.log(`Asset ${asset.name} is not a CSV, skipping extraction (type: ${asset.type}, mimeType: ${asset.mimeType})`);
@@ -579,14 +589,20 @@ class VectorJobProcessor {
       // Check if we have a file path to work with
       let filePath = null;
       
+      console.log(`Checking file path options...`);
+      
       // Try to get file from Cloudinary URL or local path
       if (asset.cloudinaryUrl) {
+        console.log(`Using Cloudinary URL: ${asset.cloudinaryUrl}`);
         // For Cloudinary files, we'll need to download temporarily
         filePath = await this.downloadTempFile(asset.cloudinaryUrl, asset.name);
       } else if (asset.url && asset.url.startsWith('/')) {
+        console.log(`Using local file path: ${asset.url}`);
         // Local file path
         filePath = asset.url;
       }
+
+      console.log(`Final file path: ${filePath}`);
 
       if (!filePath) {
         console.warn(`No accessible file path for CSV: ${asset.name}`);
@@ -598,12 +614,21 @@ class VectorJobProcessor {
         return;
       }
 
+      console.log(`About to validate CSV file: ${filePath}`);
+
       try {
         // Validate CSV file
-        await csvProcessingService.validateCSV(filePath);
+        console.log(`Calling csvProcessingService.validateCSV...`);
+        const validationResult = await csvProcessingService.validateCSV(filePath);
+        console.log(`CSV validation passed:`, validationResult);
 
         // Extract content from CSV
+        console.log(`Starting CSV data extraction...`);
         const extractedData = await csvProcessingService.extractCSVData(filePath);
+        console.log(`CSV data extraction completed:`, {
+          rowCount: extractedData.metadata?.rowCount,
+          columnCount: extractedData.metadata?.columnCount
+        });
 
         // Update asset with extracted content
         const updatedMetadata = {
@@ -624,6 +649,7 @@ class VectorJobProcessor {
 
       } catch (extractionError) {
         console.error(`CSV extraction failed for ${asset.name}:`, extractionError);
+        console.error(`Extraction error stack:`, extractionError.stack);
         
         // Mark extraction as failed
         await Asset.findByIdAndUpdate(asset._id, {

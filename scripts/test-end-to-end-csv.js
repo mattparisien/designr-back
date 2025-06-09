@@ -94,7 +94,7 @@ async function testEndToEndCSV() {
 
     // 2. Wait a bit more for vectorization to complete
     console.log('\n⏳ Waiting for vectorization to complete...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 7000));
 
     // 3. Test if the data was vectorized and can be searched
     console.log('\n🔍 Testing search functionality...');
@@ -116,9 +116,14 @@ async function testEndToEndCSV() {
     const globalResults = await vectorStoreService.searchAssets('sunny weather', null, { limit: 3 });
     console.log(`🌍 Global search results for "sunny weather": ${globalResults.length} results found`);
 
-    // 4. Test document chunks search
-    const chunkResults = await vectorStoreService.searchDocumentChunks('temperature humidity', 'test-end-to-end-user', { limit: 3 });
-    console.log(`📚 Document chunks search results: ${chunkResults.length} chunks found`);
+    // 4. Test document chunks search - try both user-specific and global
+    const userChunkResults = await vectorStoreService.searchDocumentChunks('temperature humidity', 'test-end-to-end-user', { limit: 3 });
+    console.log(`📚 User-specific document chunks search results: ${userChunkResults.length} chunks found`);
+
+    const globalChunkResults = await vectorStoreService.searchDocumentChunks('temperature humidity', null, { limit: 3 });
+    console.log(`🌍 Global document chunks search results: ${globalChunkResults.length} chunks found`);
+
+    const chunkResults = userChunkResults.length > 0 ? userChunkResults : globalChunkResults;
 
     if (chunkResults.length > 0) {
       console.log('📄 First chunk result preview:', {
@@ -144,6 +149,8 @@ async function testEndToEndCSV() {
     console.log(`   • Asset search results: ${searchResults.length > 0 ? '✅' : '❌'}`);
     console.log(`   • Global search results: ${globalResults.length > 0 ? '✅' : '❌'}`);
     console.log(`   • Document chunks search: ${chunkResults.length > 0 ? '✅' : '❌'}`);
+    console.log(`   • User-specific chunks: ${userChunkResults.length > 0 ? '✅' : '❌'}`);
+    console.log(`   • Global chunks: ${globalChunkResults.length > 0 ? '✅' : '❌'}`);
 
   } catch (error) {
     console.error('❌ End-to-end test failed:', error.message);

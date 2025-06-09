@@ -285,11 +285,14 @@ class CSVProcessingService {
                 throw new Error('CSV file too large (max 50MB)');
             }
 
-            // Try to read first few lines to validate format
-            const firstLines = await this.readFirstLines(filePath, 5);
-            if (firstLines.length === 0) {
+            // Check if file is empty
+            if (stats.size === 0) {
                 throw new Error('CSV file appears to be empty');
             }
+
+            // Simple validation - just check if file exists and is readable
+            // More detailed validation will happen during parsing
+            fs.accessSync(filePath, fs.constants.R_OK);
 
             return true;
         } catch (error) {
