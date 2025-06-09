@@ -248,9 +248,16 @@ exports.uploadAsset = async (req, res) => {
     
     // Queue asset for vectorization in background
     try {
-      vectorJobProcessor.enqueue('add', savedAsset._id, 'normal');
+      if (assetType === 'document' && correctedMimeType === 'application/pdf') {
+        // For PDFs, first extract content, then vectorize
+        vectorJobProcessor.enqueue('extractPDF', savedAsset._id, 'high');
+        console.log(`Queued PDF extraction for asset ${savedAsset._id}`);
+      } else {
+        // For other assets, use standard vectorization
+        vectorJobProcessor.enqueue('add', savedAsset._id, 'normal');
+      }
     } catch (vectorError) {
-      console.warn('Failed to queue asset for vectorization:', vectorError);
+      console.warn('Failed to queue asset for processing:', vectorError);
       // Don't fail the upload, just log the warning
     }
     
@@ -355,6 +362,12 @@ exports.deleteAsset = async (req, res) => {
     if (asset.vectorized) {
       try {
         await vectorStoreService.removeAsset(asset._id.toString());
+        
+        // Also remove document chunks if this is a PDF
+        if (asset.type === 'document' && asset.mimeType === 'application/pdf') {
+          await vectorStoreService.removeDocumentChunks(asset._id.toString());
+          console.log(`Removed document chunks for PDF asset ${asset._id}`);
+        }
       } catch (vectorError) {
         console.warn('Could not delete from vector store:', vectorError);
         // Continue anyway, as we still want to delete the database record
@@ -1247,5 +1260,184 @@ exports.batchAnalyzeAssets = async (req, res) => {
   } catch (error) {
     console.error('Error in batch analysis:', error);
     res.status(500).json({ message: 'Batch analysis failed', error: error.message });
+  }
+};
+
+// Search document chunks by content
+exports.searchDocumentChunks = async (req, res) => {
+  try {
+    const { q, userId, limit = 20, threshold = 0.7, assetId, quality, language, minWordCount } = req.query;
+    
+    if (!q) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    const options = {
+      limit: parseInt(limit),
+      threshold: parseFloat(threshold)
+    };
+    
+    if (assetId) options.assetId = assetId;
+    if (quality) options.quality = quality;
+    if (language) options.language = language;
+    if (minWordCount) options.minWordCount = parseInt(minWordCount);
+    
+    const results = await vectorStoreService.searchDocumentChunks(q, effectiveUserId, options);
+    
+    res.status(200).json({
+      query: q,
+      totalResults: results.length,
+      results
+    });
+  } catch (error) {
+    console.error('Error searching document chunks:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Hybrid search (assets + document chunks)
+exports.hybridSearch = async (req, res) => {
+  try {
+    const { 
+      q, 
+      userId, 
+      limit = 20, 
+      threshold = 0.7, 
+      includeAssets = 'true', 
+      includeChunks = 'true',
+      assetLimit = 10,
+      chunkLimit = 10,
+      type,
+      folderId
+    } = req.query;
+    
+    if (!q) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    const options = {
+      limit: parseInt(limit),
+      threshold: parseFloat(threshold),
+      includeAssets: includeAssets === 'true',
+      includeChunks: includeChunks === 'true',
+      assetLimit: parseInt(assetLimit),
+      chunkLimit: parseInt(chunkLimit)
+    };
+    
+    if (type) options.type = type;
+    if (folderId !== undefined) {
+      options.folderId = folderId === 'null' ? null : folderId;
+    }
+    
+    const results = await vectorStoreService.hybridSearch(q, effectiveUserId, options);
+    
+    // Enrich asset results with full asset data
+    if (results.assets.length > 0) {
+      const assetIds = results.assets.map(result => result.assetId);
+      const fullAssets = await Asset.find({ _id: { $in: assetIds } });
+      
+      results.assets = results.assets.map(result => {
+        const fullAsset = fullAssets.find(asset => asset._id.toString() === result.assetId);
+        return {
+          ...result,
+          asset: fullAsset
+        };
+      });
+    }
+    
+    res.status(200).json({
+      query: q,
+      ...results
+    });
+  } catch (error) {
+    console.error('Error performing hybrid search:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get document chunks for a specific asset
+exports.getDocumentChunks = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, limit = 100, startIndex = 0 } = req.query;
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    // Verify asset exists and belongs to user
+    const asset = await Asset.findOne({ _id: id, userId: effectiveUserId });
+    if (!asset) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+    
+    if (asset.type !== 'document') {
+      return res.status(400).json({ message: 'Asset is not a document' });
+    }
+    
+    const options = {
+      limit: parseInt(limit),
+      startIndex: parseInt(startIndex)
+    };
+    
+    const chunks = await vectorStoreService.getAssetChunks(id, effectiveUserId, options);
+    
+    res.status(200).json({
+      assetId: id,
+      assetName: asset.name,
+      totalChunks: chunks.length,
+      chunks
+    });
+  } catch (error) {
+    console.error('Error retrieving document chunks:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get document summary for a specific asset
+exports.getDocumentSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, maxChunks = 10 } = req.query;
+    
+    // Use default user if no userId provided
+    const effectiveUserId = userId || 'default-user';
+    
+    // Verify asset exists and belongs to user
+    const asset = await Asset.findOne({ _id: id, userId: effectiveUserId });
+    if (!asset) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+    
+    if (asset.type !== 'document') {
+      return res.status(400).json({ message: 'Asset is not a document' });
+    }
+    
+    const summary = await vectorStoreService.getDocumentSummary(id, effectiveUserId, parseInt(maxChunks));
+    
+    if (!summary) {
+      return res.status(404).json({ message: 'No document content found. The document may not have been processed yet.' });
+    }
+    
+    res.status(200).json({
+      assetId: id,
+      assetName: asset.name,
+      assetMetadata: {
+        fileSize: asset.fileSize,
+        mimeType: asset.mimeType,
+        createdAt: asset.createdAt,
+        extractionStatus: asset.metadata?.extractionStatus || 'unknown',
+        extractionQuality: asset.metadata?.extractionQuality || 'unknown'
+      },
+      summary
+    });
+  } catch (error) {
+    console.error('Error generating document summary:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

@@ -11,6 +11,18 @@ router.get('/', assetController.getAssets);
 // GET vector search assets by semantic similarity
 router.get('/search/vector', assetController.searchAssetsByVector);
 
+// GET search document chunks by content
+router.get('/search/documents', assetController.searchDocumentChunks);
+
+// GET hybrid search (assets + document chunks)
+router.get('/search/hybrid', assetController.hybridSearch);
+
+// GET document chunks for a specific asset
+router.get('/:id/chunks', assetController.getDocumentChunks);
+
+// GET document summary for a specific asset
+router.get('/:id/summary', assetController.getDocumentSummary);
+
 // GET vector store statistics
 router.get('/vector/stats', assetController.getVectorStats);
 

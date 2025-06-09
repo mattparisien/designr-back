@@ -2,6 +2,8 @@ const Asset = require('../models/Asset');
 const vectorStoreService = require('../services/vectorStore');
 const imageAnalysisService = require('./imageAnalysisService');
 const imageVectorService = require('./imageVectorService');
+const pdfProcessingService = require('./pdfProcessingService');
+const documentChunkingService = require('./documentChunkingService');
 
 class VectorJobProcessor {
   constructor() {
@@ -94,6 +96,43 @@ class VectorJobProcessor {
     }
   }
 
+  // Process a specific number of jobs (for testing)
+  async processJobs(maxJobs = 1) {
+    const results = {
+      processed: 0,
+      failed: 0,
+      failures: []
+    };
+
+    const jobsToProcess = Math.min(maxJobs, this.queue.length);
+    
+    for (let i = 0; i < jobsToProcess; i++) {
+      if (this.queue.length === 0) break;
+      
+      // Sort by priority and take the highest priority job
+      this.queue.sort((a, b) => {
+        const priorityOrder = { high: 3, normal: 2, low: 1 };
+        return priorityOrder[b.priority] - priorityOrder[a.priority];
+      });
+
+      const job = this.queue.shift();
+      
+      try {
+        await this.processJob(job);
+        results.processed++;
+      } catch (error) {
+        results.failed++;
+        results.failures.push({
+          jobType: job.type,
+          assetId: job.assetId,
+          error: error.message
+        });
+      }
+    }
+
+    return results;
+  }
+
   // Process individual job
   async processJob(job) {
     console.log(`Processing vector job: ${job.id}`);
@@ -113,6 +152,12 @@ class VectorJobProcessor {
         break;
       case 'remove':
         await this.removeAssetFromVector(job.assetId);
+        break;
+      case 'extractPDF':
+        await this.processPDFExtraction(asset);
+        break;
+      case 'vectorizePDF':
+        await this.processPDFVectorization(asset);
         break;
       default:
         console.error(`Unknown job type: ${job.type}`);
@@ -350,6 +395,203 @@ class VectorJobProcessor {
       console.error('Error re-vectorizing all assets:', error);
       throw error;
     }
+  }
+
+  // Process PDF content extraction
+  async processPDFExtraction(asset) {
+    try {
+      console.log(`Starting PDF extraction for: ${asset.name}`);
+
+      if (asset.type !== 'document' || !asset.mimeType.includes('pdf')) {
+        console.log(`Asset ${asset.name} is not a PDF, skipping extraction`);
+        return;
+      }
+
+      // Check if we have a file path to work with
+      let filePath = null;
+      
+      // Try to get file from Cloudinary URL or local path
+      if (asset.cloudinaryUrl) {
+        // For Cloudinary files, we'll need to download temporarily
+        filePath = await this.downloadTempFile(asset.cloudinaryUrl, asset.name);
+      } else if (asset.url && asset.url.startsWith('/')) {
+        // Local file path
+        filePath = asset.url;
+      }
+
+      if (!filePath) {
+        console.warn(`No accessible file path for PDF: ${asset.name}`);
+        // Mark extraction as failed but don't throw
+        await Asset.findByIdAndUpdate(asset._id, {
+          'metadata.extractionFailed': true,
+          'metadata.extractionError': 'No accessible file path'
+        });
+        return;
+      }
+
+      try {
+        // Initialize PDF processing service if needed
+        if (!pdfProcessingService.initialized) {
+          await pdfProcessingService.initialize();
+        }
+
+        // Extract content from PDF
+        const extractedContent = await pdfProcessingService.extractTextFromPDF(filePath);
+
+        // Update asset with extracted content
+        const updatedMetadata = {
+          ...asset.metadata,
+          extractedContent,
+          pdfProcessingCompleted: new Date(),
+          contentExtractionPending: false
+        };
+
+        await Asset.findByIdAndUpdate(asset._id, {
+          metadata: updatedMetadata
+        });
+
+        console.log(`PDF extraction completed for ${asset.name}: ${extractedContent.wordCount} words extracted`);
+
+        // Queue for vectorization
+        this.enqueue('vectorizePDF', asset._id, 'normal');
+
+      } catch (extractionError) {
+        console.error(`PDF extraction failed for ${asset.name}:`, extractionError);
+        
+        // Mark extraction as failed
+        await Asset.findByIdAndUpdate(asset._id, {
+          'metadata.extractionFailed': true,
+          'metadata.extractionError': extractionError.message,
+          'metadata.contentExtractionPending': false
+        });
+      } finally {
+        // Clean up temporary file if we downloaded one
+        if (filePath && filePath.includes('temp-uploads')) {
+          try {
+            const fs = require('fs');
+            fs.unlinkSync(filePath);
+          } catch (cleanupError) {
+            console.warn('Failed to cleanup temp file:', cleanupError);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error in PDF extraction for ${asset._id}:`, error);
+      throw error;
+    }
+  }
+
+  // Process PDF vectorization with chunking
+  async processPDFVectorization(asset) {
+    try {
+      console.log(`Starting PDF vectorization for: ${asset.name}`);
+
+      if (!asset.metadata?.extractedContent) {
+        console.warn(`No extracted content found for PDF: ${asset.name}`);
+        // Try to trigger extraction first
+        this.enqueue('extractPDF', asset._id, 'high');
+        return;
+      }
+
+      const extractedContent = asset.metadata.extractedContent;
+
+      // Prepare document object for chunking
+      const document = {
+        assetId: asset._id.toString(),
+        text: extractedContent.text,
+        title: extractedContent.title || asset.name,
+        author: extractedContent.author,
+        subject: extractedContent.subject,
+        sections: extractedContent.sections || [],
+        wordCount: extractedContent.wordCount,
+        pageCount: extractedContent.pageCount
+      };
+
+      // Create chunks using hybrid strategy
+      const chunks = documentChunkingService.chunkDocument(document, {
+        strategy: 'hybrid',
+        chunkSize: 1000,
+        overlap: 200,
+        preserveSections: true
+      });
+
+      console.log(`Created ${chunks.length} chunks for PDF: ${asset.name}`);
+
+      // Add chunks to vector store
+      await vectorStoreService.addDocumentWithChunks(asset, chunks);
+
+      // Update asset metadata with chunking info
+      const chunkingMetadata = {
+        totalChunks: chunks.length,
+        chunkingStrategy: 'hybrid',
+        avgChunkSize: Math.round(chunks.reduce((sum, chunk) => sum + chunk.text.length, 0) / chunks.length),
+        vectorizationCompleted: new Date()
+      };
+
+      await Asset.findByIdAndUpdate(asset._id, {
+        vectorized: true,
+        vectorLastUpdated: new Date(),
+        'metadata.extractedContent.totalChunks': chunkingMetadata.totalChunks,
+        'metadata.extractedContent.chunkingStrategy': chunkingMetadata.chunkingStrategy,
+        'metadata.extractedContent.avgChunkSize': chunkingMetadata.avgChunkSize
+      });
+
+      console.log(`PDF vectorization completed for ${asset.name}: ${chunks.length} chunks processed`);
+
+    } catch (error) {
+      console.error(`Error in PDF vectorization for ${asset._id}:`, error);
+      
+      // Mark vectorization as failed
+      await Asset.findByIdAndUpdate(asset._id, {
+        'metadata.vectorizationFailed': true,
+        'metadata.vectorizationError': error.message
+      });
+      
+      throw error;
+    }
+  }
+
+  // Helper method to download temporary file from URL
+  async downloadTempFile(url, filename) {
+    const https = require('https');
+    const http = require('http');
+    const fs = require('fs');
+    const path = require('path');
+
+    return new Promise((resolve, reject) => {
+      const tempDir = path.join(__dirname, '../temp-uploads');
+      
+      // Ensure temp directory exists
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const tempFilePath = path.join(tempDir, `temp_${Date.now()}_${filename}`);
+      const file = fs.createWriteStream(tempFilePath);
+
+      const request = url.startsWith('https') ? https : http;
+
+      request.get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download file: ${response.statusCode}`));
+          return;
+        }
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          resolve(tempFilePath);
+        });
+
+        file.on('error', (error) => {
+          fs.unlink(tempFilePath, () => {}); // Clean up on error
+          reject(error);
+        });
+      }).on('error', (error) => {
+        reject(error);
+      });
+    });
   }
 }
 

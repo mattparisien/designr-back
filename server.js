@@ -18,6 +18,7 @@ const vectorStoreService = require('./services/vectorStore');
 const vectorJobProcessor = require('./services/vectorJobProcessor');
 const imageAnalysisService = require('./services/imageAnalysisService');
 const imageVectorService = require('./services/imageVectorService');
+const pdfProcessingService = require('./services/pdfProcessingService');
 
 // Create Express app
 const app = express();
@@ -90,6 +91,15 @@ connectDB() // Use connectDB from db.js
     } catch (error) {
       console.warn('Image vector service initialization failed:', error.message);
       console.warn('Visual-focused vector generation will be disabled, falling back to text-only');
+    }
+    
+    // Initialize PDF processing service
+    try {
+      await pdfProcessingService.initialize();
+      console.log('PDF processing service initialized');
+    } catch (error) {
+      console.warn('PDF processing service initialization failed:', error.message);
+      console.warn('PDF content extraction will be disabled');
     }
     
     // Initialize Passport for Google OAuth

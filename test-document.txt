@@ -1,0 +1,19 @@
+# Test Document
+
+This is a test PDF document for testing the comprehensive PDF vectorization system.
+
+## Introduction
+This document contains multiple sections to test the chunking and vectorization capabilities.
+
+## Section 1: Technical Overview
+The PDF processing system extracts text content, analyzes document structure, and creates intelligent chunks for semantic search.
+
+## Section 2: Features
+- Text extraction from PDF files
+- Intelligent document chunking 
+- Vector embeddings generation
+- Semantic search capabilities
+- Document structure analysis
+
+## Conclusion
+This test document validates the PDF processing pipeline end-to-end.
