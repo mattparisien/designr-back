@@ -99,7 +99,7 @@ async function comprehensiveCSVTest() {
                 
                 if (results.length > 0) {
                     results.forEach((result, i) => {
-                        console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.fileName || result.id}`);
+                        console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.parentName || result.metadata?.name || result.id}`);
                     });
                 }
             } catch (error) {
@@ -120,8 +120,8 @@ async function comprehensiveCSVTest() {
             
             console.log(`✅ Found ${chunkResults.length} relevant chunks:`);
             chunkResults.forEach((chunk, i) => {
-                console.log(`   ${i + 1}. ${chunk.metadata?.chunkType || 'unknown'} - Score: ${chunk.score?.toFixed(3)}`);
-                console.log(`      Content: ${chunk.pageContent?.substring(0, 100)}...`);
+                console.log(`   ${i + 1}. ${chunk.metadata?.chunkId || chunk.chunkId || 'unknown'} - Score: ${chunk.score?.toFixed(3)}`);
+                console.log(`      Content: ${chunk.text?.substring(0, 100) || chunk.metadata?.content?.substring(0, 100)}...`);
             });
         } catch (error) {
             console.log(`⚠️ Chunk search failed: ${error.message}`);

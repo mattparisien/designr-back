@@ -437,9 +437,12 @@ class VectorStoreService {
       const queryEmbedding = await this.generateEmbedding(query);
 
       // Build filter for user-specific search
-      const filter = {
-        userId: { $eq: userId }
-      };
+      const filter = {};
+      
+      // Only add userId filter if userId is provided (not null)
+      if (userId !== null && userId !== undefined) {
+        filter.userId = { $eq: userId };
+      }
 
       if (type) {
         filter.type = { $eq: type };
@@ -449,13 +452,20 @@ class VectorStoreService {
         filter.folderId = folderId ? { $eq: folderId } : { $eq: 'root' };
       }
 
-      // Perform vector search
-      const searchResponse = await this.index.query({
+      // Prepare query parameters
+      const queryParams = {
         vector: queryEmbedding,
         topK: limit,
-        filter: filter,
         includeMetadata: true
-      });
+      };
+
+      // Only add filter if it has any properties
+      if (Object.keys(filter).length > 0) {
+        queryParams.filter = filter;
+      }
+
+      // Perform vector search
+      const searchResponse = await this.index.query(queryParams);
 
       // Filter results by similarity threshold
       const results = searchResponse.matches
@@ -493,21 +503,32 @@ class VectorStoreService {
 
       // Build filter for user-specific chunk search
       const filter = {
-        userId: { $eq: userId },
         type: { $eq: 'document_chunk' }
       };
+      
+      // Only add userId filter if userId is provided (not null)
+      if (userId !== null && userId !== undefined) {
+        filter.userId = { $eq: userId };
+      }
 
       if (assetId) {
         filter.assetId = { $eq: assetId };
       }
 
-      // Perform vector search
-      const searchResponse = await this.index.query({
+      // Prepare query parameters
+      const queryParams = {
         vector: queryEmbedding,
         topK: limit,
-        filter: filter,
         includeMetadata: true
-      });
+      };
+
+      // Only add filter if it has any properties beyond the required type filter
+      if (Object.keys(filter).length > 1 || filter.type) {
+        queryParams.filter = filter;
+      }
+
+      // Perform vector search
+      const searchResponse = await this.index.query(queryParams);
 
       // Filter results by similarity threshold
       const results = searchResponse.matches

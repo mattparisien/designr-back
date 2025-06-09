@@ -39,7 +39,7 @@ async function testWeatherSearch() {
                 
                 if (results.length > 0) {
                     results.forEach((result, i) => {
-                        console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.fileName || result.id}`);
+                        console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.parentName || result.metadata?.name || result.id}`);
                         if (result.metadata) {
                             console.log(`      Type: ${result.metadata.type || 'unknown'}`);
                             console.log(`      Size: ${result.metadata.fileSize || 'unknown'} bytes`);
@@ -63,8 +63,8 @@ async function testWeatherSearch() {
                 
                 if (chunkResults.length > 0) {
                     chunkResults.forEach((chunk, i) => {
-                        console.log(`   ${i + 1}. ${chunk.metadata?.chunkType || 'unknown'} - Score: ${chunk.score?.toFixed(3)}`);
-                        console.log(`      Content preview: ${chunk.pageContent?.substring(0, 80)}...`);
+                        console.log(`   ${i + 1}. ${chunk.metadata?.chunkId || chunk.chunkId || 'unknown'} - Score: ${chunk.score?.toFixed(3)}`);
+                        console.log(`      Content preview: ${chunk.text?.substring(0, 80) || chunk.metadata?.content?.substring(0, 80)}...`);
                         if (chunk.metadata) {
                             console.log(`      Asset: ${chunk.metadata.assetId || 'unknown'}`);
                         }
@@ -87,7 +87,7 @@ async function testWeatherSearch() {
             
             if (globalResults.length > 0) {
                 globalResults.forEach((result, i) => {
-                    console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.fileName || result.id}`);
+                    console.log(`   ${i + 1}. Score: ${result.score?.toFixed(3)} - ${result.metadata?.parentName || result.metadata?.name || result.id}`);
                 });
             }
         } catch (error) {
