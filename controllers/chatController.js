@@ -1,8 +1,9 @@
 // controllers/chatControllerImproved.js
 // ------------------------------------------------------------
-// Design‑Assistant chat controller
+// Design‑Assistant chat controller (v3.0.0)
 // A robust, secure wrapper around the OpenAI chat API that enforces
-// strict design‑only guard‑rails for a Canva‑like platform.
+// strict design‑only guard‑rails for a Canva‑like platform and returns
+// **structured JSON** responses (assistant_text, suggestions, action).
 // ------------------------------------------------------------
 
 /* eslint-disable no-console */
@@ -12,21 +13,28 @@ const { StatusCodes } = require('http-status-codes');
 require('dotenv').config();
 
 // ------------------------------------------------------------
-// Configuration
+// Configuration & feature flags
 // ------------------------------------------------------------
 
 const CONFIG = {
   APP_NAME: process.env.APP_NAME || 'Canva Clone',
-  MODEL: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+  MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   MAX_MESSAGE_LENGTH: 1000,
-  MAX_TOKENS: 200,
+  MAX_TOKENS: 300,
+  /**
+   * Set OPENAI_JSON=true to switch to JSON output mode.
+   * In this mode the controller asks the model for valid JSON using
+   *    response_format:{type:'json_object'}
+   * and returns a single SSE event containing the parsed object.
+   */
+  USE_JSON_MODE: process.env.OPENAI_JSON === 'true',
 };
 
 // ------------------------------------------------------------
-// System Prompt – design‑only guardrails
+// System Prompt – design‑only guardrails & JSON schema instructions
 // ------------------------------------------------------------
 
-const SYSTEM_MESSAGE = `You are a Design Assistant for a Canva‑like design platform named *${CONFIG.APP_NAME}*.
+const SYSTEM_MESSAGE = ({ appName, jsonMode }) => `You are a Design Assistant for a Canva‑like design platform named *${appName}*.
 Your *only* purpose is to help users with design‑related tasks **inside this application**.
 
 # Strict rules – you must follow:
@@ -37,10 +45,10 @@ Your *only* purpose is to help users with design‑related tasks **inside this a
    "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?"
 5. Remain helpful, encouraging, and laser‑focused on the user's creative goals.
 6. Suggest concrete design actions they can take within the platform.
-`;
+${jsonMode ? `\n# Output format\nReturn **only** valid JSON with the following keys and NEVER any additional keys or markdown.\n- assistant_text: string  // conversational reply to show the user\n- suggestions:   string[] // 1‑5 quick actions\n- action:        string   // one of [\"none\",\"open_template\",\"apply_brand\",\"upload_asset\"]` : ''}`;
 
 // ------------------------------------------------------------
-// Keyword & topic reference data
+// Keyword & topic reference data (unchanged)
 // ------------------------------------------------------------
 
 const FORBIDDEN_TOPICS = new Set([
@@ -86,7 +94,6 @@ const DESIGN_KEYWORDS = [
   'card',
 ];
 
-// Map of keyword‑regex → contextual suggestion lists
 const SUGGESTIONS_MAP = [
   {
     test: /logo|branding/i,
@@ -128,22 +135,18 @@ const DEFAULT_SUGGESTIONS = [
 // Helpers
 // ------------------------------------------------------------
 
-/** Normalise text for case‑insensitive comparison. */
 const normalise = (text = '') => text.toLowerCase();
 
-/** Quick forbidden‑topic scan (O(n) but small n). */
 function containsForbiddenTopic(text) {
   const lower = normalise(text);
   return Array.from(FORBIDDEN_TOPICS).some((topic) => lower.includes(topic));
 }
 
-/** Does the message appear design‑related? */
 function containsDesignKeyword(text) {
   const lower = normalise(text);
   return DESIGN_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-/** Return the first matching suggestion set or the default. */
 function generateSuggestions(text) {
   for (const entry of SUGGESTIONS_MAP) {
     if (entry.test.test(text)) return entry.suggestions;
@@ -151,17 +154,24 @@ function generateSuggestions(text) {
   return DEFAULT_SUGGESTIONS;
 }
 
-/** Fallback response when the OpenAI call fails or model unavailable. */
 function buildFallback(text, useOwnData) {
   if (containsDesignKeyword(text)) {
     const extras = useOwnData ? 'I’ll use your brand assets. ' : '';
-    return `Great! ${extras}Let me suggest some design approaches for your “${text}”. Would you like recommended templates or colour schemes to get started?`;
+    return {
+      assistant_text: `Great! ${extras}Let me suggest some design approaches for your “${text}”. Would you like recommended templates or colour schemes to get started?`,
+      suggestions: generateSuggestions(text),
+      action: 'none',
+    };
   }
-  return `I can help you turn that idea into a beautiful design! ${useOwnData ? 'Using your personal assets, ' : ''}start by choosing a template – a social media post, presentation, flyer, or something else?`;
+  return {
+    assistant_text: `I can help you turn that idea into a beautiful design! ${useOwnData ? 'Using your personal assets, ' : ''}start by choosing a template – a social media post, presentation, flyer, or something else?`,
+    suggestions: DEFAULT_SUGGESTIONS,
+    action: 'none',
+  };
 }
 
 // ------------------------------------------------------------
-// OpenAI initialisation (done once at module load‑time)
+// OpenAI initialisation (once at module load‑time)
 // ------------------------------------------------------------
 
 let openai = null;
@@ -183,7 +193,7 @@ if (process.env.OPENAI_API_KEY) {
 exports.sendMessage = async (req, res) => {
   const { message = '', useOwnData = false } = req.body || {};
 
-  // Basic validation – keep responses early‑exit & clear
+  // ---------------- Validation ----------------
   if (typeof message !== 'string' || !message.trim()) {
     return res
       .status(StatusCodes.BAD_REQUEST)
@@ -195,110 +205,107 @@ exports.sendMessage = async (req, res) => {
       .json({ message: `Message exceeds ${CONFIG.MAX_MESSAGE_LENGTH} characters.` });
   }
 
-  // Guardrails: forbidden topics
+  // ---------------- Guard‑rails ----------------
   if (containsForbiddenTopic(message)) {
     return res.status(StatusCodes.OK).json({
-      response:
+      assistant_text:
         "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?",
+      suggestions: DEFAULT_SUGGESTIONS,
+      action: 'none',
       timestamp: new Date(),
       useOwnData: false,
-      suggestions: DEFAULT_SUGGESTIONS,
     });
   }
 
-  // Default suggestions based on content
-  const suggestions = generateSuggestions(message);
-
-  // If OpenAI not configured, return fallback immediately using SSE
+  // No OpenAI client? -> fallback immediately (JSON)
   if (!openai) {
-    const fallbackResponse = buildFallback(message, useOwnData);
-    
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
-    });
-    
-    res.write(`data: ${JSON.stringify({
-      type: 'complete',
-      response: fallbackResponse,
+    return res.status(StatusCodes.OK).json({
+      ...buildFallback(message, useOwnData),
       timestamp: new Date(),
       useOwnData,
-      suggestions,
-    })}\n\n`);
-    
-    return res.end();
+    });
   }
 
-  // Build the chat conversation payload
+  // ---------------- Build prompt ----------------
   const messages = [
-    { role: 'system', content: SYSTEM_MESSAGE },
+    { role: 'system', content: SYSTEM_MESSAGE({ appName: CONFIG.APP_NAME, jsonMode: CONFIG.USE_JSON_MODE }) },
     {
       role: 'user',
       content: `User message: "${message}". ${useOwnData ? 'The user wants to use personal assets and brand guidelines.' : 'The user is not using personal assets.'}`,
     },
   ];
 
-  try {
-    // Set headers for Server-Sent Events (SSE)
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
-    });
+  // ---------------- SSE headers ----------------
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
 
+  try {
+    if (CONFIG.USE_JSON_MODE) {
+      // -------- Non‑streaming call, guaranteed JSON --------
+      const completion = await openai.chat.completions.create({
+        model: CONFIG.MODEL,
+        messages,
+        max_tokens: CONFIG.MAX_TOKENS,
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+      });
+
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      // Validate shape (basic)
+      if (!parsed.assistant_text) throw new Error('assistant_text missing');
+      if (!Array.isArray(parsed.suggestions)) parsed.suggestions = generateSuggestions(message);
+      if (!parsed.action) parsed.action = 'none';
+
+      res.write(`data: ${JSON.stringify({
+        type: 'complete',
+        ...parsed,
+        timestamp: new Date(),
+        useOwnData,
+      })}\n\n`);
+      return res.end();
+    }
+
+    // -------- Legacy streaming text mode --------
     const stream = await openai.chat.completions.create({
       model: CONFIG.MODEL,
       messages,
       max_tokens: CONFIG.MAX_TOKENS,
       temperature: 0.7,
-      stream: true
+      stream: true,
     });
 
     let fullResponse = '';
-    
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
         fullResponse += content;
-        
-        // Send each chunk as Server-Sent Event
-        res.write(`data: ${JSON.stringify({
-          type: 'chunk',
-          content: content,
-          timestamp: new Date()
-        })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content, timestamp: new Date() })}\n\n`);
       }
     }
 
-    // Send completion event with final data
     res.write(`data: ${JSON.stringify({
       type: 'complete',
-      response: fullResponse,
+      assistant_text: fullResponse,
+      suggestions: generateSuggestions(message),
+      action: 'none',
       timestamp: new Date(),
       useOwnData,
-      suggestions,
     })}\n\n`);
-
     res.end();
-
   } catch (err) {
     console.error('🛑 OpenAI API error:', err);
-    
-    // Send error as SSE and fallback response
-    const fallbackResponse = buildFallback(message, useOwnData);
-    
+
+    // Send fallback JSON
     res.write(`data: ${JSON.stringify({
       type: 'complete',
-      response: fallbackResponse,
+      ...buildFallback(message, useOwnData),
       timestamp: new Date(),
       useOwnData,
-      suggestions,
     })}\n\n`);
-    
     res.end();
   }
 };
@@ -307,11 +314,12 @@ exports.sendMessage = async (req, res) => {
 // Health‑check endpoint GET /chat/health
 // ------------------------------------------------------------
 
-exports.healthCheck = (req, res) => {
+exports.healthCheck = (_req, res) => {
   res.status(StatusCodes.OK).json({
     status: 'operational',
     service: 'Design Assistant Chat',
     timestamp: new Date(),
-    version: '2.0.0',
+    version: '3.0.0',
+    jsonMode: CONFIG.USE_JSON_MODE,
   });
 };
