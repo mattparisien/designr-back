@@ -209,14 +209,26 @@ exports.sendMessage = async (req, res) => {
   // Default suggestions based on content
   const suggestions = generateSuggestions(message);
 
-  // If OpenAI not configured, return fallback immediately
+  // If OpenAI not configured, return fallback immediately using SSE
   if (!openai) {
-    return res.status(StatusCodes.OK).json({
-      response: buildFallback(message, useOwnData),
+    const fallbackResponse = buildFallback(message, useOwnData);
+    
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      response: fallbackResponse,
       timestamp: new Date(),
       useOwnData,
       suggestions,
-    });
+    })}\n\n`);
+    
+    return res.end();
   }
 
   // Build the chat conversation payload
@@ -229,29 +241,65 @@ exports.sendMessage = async (req, res) => {
   ];
 
   try {
-    const aiResponse = await openai.chat.completions.create({
+    // Set headers for Server-Sent Events (SSE)
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    const stream = await openai.chat.completions.create({
       model: CONFIG.MODEL,
       messages,
       max_tokens: CONFIG.MAX_TOKENS,
       temperature: 0.7,
+      stream: true
     });
 
-    const reply = aiResponse.choices?.[0]?.message?.content?.trim() || buildFallback(message, useOwnData);
+    let fullResponse = '';
+    
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        fullResponse += content;
+        
+        // Send each chunk as Server-Sent Event
+        res.write(`data: ${JSON.stringify({
+          type: 'chunk',
+          content: content,
+          timestamp: new Date()
+        })}\n\n`);
+      }
+    }
 
-    return res.status(StatusCodes.OK).json({
-      response: reply,
+    // Send completion event with final data
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      response: fullResponse,
       timestamp: new Date(),
       useOwnData,
       suggestions,
-    });
+    })}\n\n`);
+
+    res.end();
+
   } catch (err) {
     console.error('🛑 OpenAI API error:', err);
-    return res.status(StatusCodes.OK).json({
-      response: buildFallback(message, useOwnData),
+    
+    // Send error as SSE and fallback response
+    const fallbackResponse = buildFallback(message, useOwnData);
+    
+    res.write(`data: ${JSON.stringify({
+      type: 'complete',
+      response: fallbackResponse,
       timestamp: new Date(),
       useOwnData,
       suggestions,
-    });
+    })}\n\n`);
+    
+    res.end();
   }
 };
 
