@@ -27,7 +27,7 @@ const searchAssetsTool = ({ vs }) =>
       limit: z.number().int().min(1).max(20).default(5),
     }),
     execute: async ({ query, limit }, ctx) => {
-      const results = await vs.searchAssets(query, ctx.userId ?? 'anon', {
+      const results = await vs.searchAssets(query, null, {
         limit,
         threshold: 0.6,
       });

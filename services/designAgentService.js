@@ -10,7 +10,7 @@ const vectorStore = require('./vectorStore');
 const imageAnalysis = require('./imageAnalysisService');
 
 // Dynamic imports for ES modules
-let Agent, run, tool, webSearchTool, z, RunToolCallItem;
+let Agent, run, tool, webSearchTool, z, RunToolCallOutputItem;
 
 /**
  * Function‑tool wrappers ----------------------------------------------------
@@ -46,7 +46,7 @@ class DesignAgentService {
       run = agentsModule.run;
       tool = agentsModule.tool;
       webSearchTool = agentsModule.webSearchTool;
-      RunToolCallItem = agentsModule.RunToolCallItem;
+      RunToolCallOutputItem = agentsModule.RunToolCallOutputItem;
       z = zodModule.z;
 
       // Create tool functions after imports are available
@@ -59,9 +59,8 @@ class DesignAgentService {
             limit: z.number().int().min(1).max(20).default(5),
           }),
           execute: async ({ query, limit }, ctx) => {
-            const results = await vs.searchAssets(query, ctx.userId ?? 'anon', {
-              limit,
-              threshold: 0.6,
+            const results = await vs.searchAssets(query, ctx.userId, {
+              limit
             });
             return JSON.stringify(results);
           },
@@ -76,7 +75,7 @@ class DesignAgentService {
             limit: z.number().int().min(1).max(20).default(5),
           }),
           execute: async ({ query, limit }, ctx) => {
-            const chunks = await vs.searchDocumentChunks(query, ctx.userId ?? 'anon', {
+            const chunks = await vs.searchDocumentChunks(query, ctx.userId, {
               limit,
               threshold: 0.7,
             });
@@ -183,11 +182,12 @@ class DesignAgentService {
     const result = await run(this.#agent, userText, { userId });
 
     const toolOutputs = result.newItems
-      .filter((i) => i instanceof RunToolCallItem && i.rawItem.status === 'completed')
+      .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
       .reduce((acc, i) => {
-      acc[i.rawItem.name] = null;
-      return acc;
+        acc[i.rawItem.name] = acc[i.rawItem.output];
+        return acc;
       }, {});
+
 
     return {
       assistant_text: result.finalOutput,
