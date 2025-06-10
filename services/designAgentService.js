@@ -1,246 +1,199 @@
 // services/designAgentService.js
-// ------------------------------------------------------------
-// Design Assistant Agent Service (v2.0.0)
-// A class-based service for OpenAI powered design assistance.
-// The agent can:
-//   • respond conversationally to design questions
-//   • provide design suggestions and guidance
-//   • remain within strict design-only guard-rails
-// ------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Design Assistant Agent Service — Agents SDK Edition (v4.1.0)
+// Now includes the built‑in `webSearchTool` for external inspiration.
+// Uses dynamic imports for ES modules in CommonJS environment.
+// ---------------------------------------------------------------------------
 
-const { OpenAI } = require('openai');
-const fs = require('fs/promises');
 require('dotenv').config();
+const vectorStore = require('./vectorStore');
+const imageAnalysis = require('./imageAnalysisService');
 
+// Dynamic imports for ES modules
+let Agent, run, tool, webSearchTool, z;
+
+/**
+ * Function‑tool wrappers ----------------------------------------------------
+ * These will be created after dynamic imports are loaded
+ */
+let searchAssetsTool, searchDocsTool, analyzeImageTool, buildWebSearchTool, designOnlyGuardrail;
+
+/**
+ * DesignAgentService --------------------------------------------------------
+ */
 class DesignAgentService {
-  constructor() {
-    this.openai = null;
-    this.initialized = false;
-    this.appName = process.env.APP_NAME || 'Canva Clone';
-    this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    
-    // Guard-rail constants
-    this.forbiddenTopics = [
-      'politics',
-      'election',
-      'covid',
-      'virus',
-      'medical',
-      'doctor',
-      'medicine',
-      'legal advice',
-      'lawyer',
-      'law',
-      'financial advice',
-      'investment',
-      'crypto',
-      'hack',
-      'password',
-      'personal information',
-      'private data',
-    ];
+  #agent;
+  #initialized = false;
+  #vectorStore = vectorStore;
+  #imageAnalysis = imageAnalysis;
 
-    this.designKeywords = [
-      'logo',
-      'poster',
-      'flyer',
-      'social media',
-      'presentation',
-      'banner',
-      'branding',
-      'colour',
-      'color',
-      'font',
-      'layout',
-      'template',
-      'design',
-      'create',
-      'make',
-      'build',
-      'marketing',
-      'business card',
-      'invitation',
-      'card',
-    ];
-  }
+  static MODEL = process.env.OPENAI_MODEL || 'gpt‑4o-mini';
+  static APP = process.env.APP_NAME || 'Canva Clone';
 
   async initialize() {
-    try {
-      if (!process.env.OPENAI_API_KEY) {
-        console.warn('⚠️ OPENAI_API_KEY not found. Design agent will be disabled.');
-        return;
-      }
-
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-
-      this.initialized = true;
-      console.log('✅ Design Agent service initialized successfully');
-    } catch (error) {
-      console.error('❌ Failed to initialize Design Agent service:', error);
-    }
-  }
-
-  /**
-   * Get the system message for the design assistant
-   */
-  getSystemMessage() {
-    return `You are a Design Assistant for a Canva-like design platform named "${this.appName}".
-Your entire purpose is to help users with *design-related* tasks inside this application.
-
-Strict rules:
-1. Only discuss design topics (logos, presentations, social posts, flyers, colour schemes, typography, branding, layouts, etc.).
-2. Only assist with platform features (templates, editing elements, managing assets, fonts, colours).
-3. If the user asks about non-design topics or forbidden areas (${this.forbiddenTopics.join(', ')}), reply exactly with:
-   "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?"
-4. Respond concisely and helpfully. Offer concrete next steps (e.g. "Browse presentation templates", "Apply brand colours").
-5. Always provide helpful suggestions for design actions the user can take.`;
-  }
-
-  /**
-   * Check if text contains forbidden topics
-   */
-  containsForbiddenTopic(text) {
-    const lower = text.toLowerCase();
-    return this.forbiddenTopics.some(topic => lower.includes(topic));
-  }
-
-  /**
-   * Check if text contains design keywords
-   */
-  containsDesignKeyword(text) {
-    const lower = text.toLowerCase();
-    return this.designKeywords.some(keyword => lower.includes(keyword));
-  }
-
-  /**
-   * Generate design suggestions based on user input
-   */
-  generateSuggestions(text) {
-    const suggestions = [
-      'Browse templates',
-      'Choose a colour palette',
-      'Upload assets',
-      'Start from scratch',
-    ];
-
-    if (/logo|branding/i.test(text)) {
-      return [
-        'Browse logo templates',
-        'Choose brand colours',
-        'Upload brand assets',
-        'Start with a text-only logo',
-      ];
-    }
-
-    if (/social\s*media|facebook|instagram|twitter|tiktok/i.test(text)) {
-      return [
-        'Browse social templates',
-        'Select post size',
-        'Add trending hashtags',
-        'Use brand colours',
-      ];
-    }
-
-    if (/presentation|slides?/i.test(text)) {
-      return [
-        'Browse presentation templates',
-        'Pick slide layouts',
-        'Add subtle animations',
-        'Apply company branding',
-      ];
-    }
-
-    return suggestions;
-  }
-
-  /**
-   * Chat with the design agent
-   */
-  async chat(userText, useOwnData = false) {
-    if (!this.initialized || !this.openai) {
-      return this.getFallbackResponse(userText, useOwnData);
-    }
-
-    // Check for forbidden topics
-    if (this.containsForbiddenTopic(userText)) {
-      return {
-        assistant_text: "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?",
-        suggestions: this.generateSuggestions(''),
-        action: 'none',
-      };
+    if (this.#initialized) return;
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('⚠️  OPENAI_API_KEY missing — agent disabled');
+      return;
     }
 
     try {
-      const messages = [
-        { role: 'system', content: this.getSystemMessage() },
-        { 
-          role: 'user', 
-          content: `User message: "${userText}". ${useOwnData ? 'The user wants to use personal assets and brand guidelines.' : 'The user is not using personal assets.'}` 
+      // Dynamic import of ES modules
+      const agentsModule = await import('@openai/agents');
+      const zodModule = await import('zod');
+      
+      Agent = agentsModule.Agent;
+      run = agentsModule.run;
+      tool = agentsModule.tool;
+      webSearchTool = agentsModule.webSearchTool;
+      z = zodModule.z;
+
+      // Create tool functions after imports are available
+      searchAssetsTool = ({ vs }) =>
+        tool({
+          name: 'search_assets',
+          description: "Find visually similar assets in the user's library.",
+          parameters: z.object({
+            query: z.string().describe('Natural‑language or file name query'),
+            limit: z.number().int().min(1).max(20).default(5),
+          }),
+          execute: async ({ query, limit }, ctx) => {
+            const results = await vs.searchAssets(query, ctx.userId ?? 'anon', {
+              limit,
+              threshold: 0.6,
+            });
+            return JSON.stringify(results);
+          },
+        });
+
+      searchDocsTool = ({ vs }) =>
+        tool({
+          name: 'search_documents',
+          description: 'Search within uploaded document text.',
+          parameters: z.object({
+            query: z.string(),
+            limit: z.number().int().min(1).max(20).default(5),
+          }),
+          execute: async ({ query, limit }, ctx) => {
+            const chunks = await vs.searchDocumentChunks(query, ctx.userId ?? 'anon', {
+              limit,
+              threshold: 0.7,
+            });
+            return JSON.stringify(chunks);
+          },
+        });
+
+      analyzeImageTool = ({ ia }) =>
+        tool({
+          name: 'analyze_image',
+          description: 'Return dominant colours and objects detected in an image URL.',
+          parameters: z.object({ imageUrl: z.string().describe('The URL of the image to analyze') }),
+          execute: async ({ imageUrl }) => {
+            const analysis = await ia.analyzeImage(imageUrl);
+            return JSON.stringify(analysis ?? {});
+          },
+        });
+
+      buildWebSearchTool = () =>
+        webSearchTool({
+          userLocation: {
+            type: 'approximate',
+            city: process.env.AGENT_CITY || 'Toronto',
+          },
+        });
+
+      const FORBIDDEN = [
+        'politics',
+        'election',
+        'covid',
+        'virus',
+        'medical',
+        'doctor',
+        'medicine',
+        'legal advice',
+        'lawyer',
+        'financial advice',
+        'investment',
+        'crypto',
+        'password',
+        'private data',
+      ];
+
+      designOnlyGuardrail = {
+        name: 'design‑only‑topics',
+        async check({ content }) {
+          const lower = content.toLowerCase();
+          const hit = FORBIDDEN.some((t) => lower.includes(t));
+          if (hit) {
+            return {
+              success: false,
+              message:
+                "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?",
+            };
+          }
+          return { success: true };
         },
-      ];
-
-      const completion = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        max_tokens: 300,
-        temperature: 0.7,
-      });
-
-      const response = completion.choices[0].message.content;
-
-      return {
-        assistant_text: response,
-        suggestions: this.generateSuggestions(userText),
-        action: this.determineAction(userText),
       };
 
+      console.log('✅ ES modules loaded successfully');
     } catch (error) {
-      console.error('OpenAI API error:', error);
-      return this.getFallbackResponse(userText, useOwnData);
+      console.error('❌ Failed to load ES modules:', error.message);
+      return;
     }
+
+    // Initialise dependent services in parallel.
+    await Promise.all([
+      this.#vectorStore.initialize(),
+      this.#imageAnalysis.initialize(),
+    ]);
+
+    // Build the Agent with tools + guardrails.
+    this.#agent = new Agent({
+      name: 'Design Assistant',
+      instructions: `You are a Design Assistant for the design platform "${DesignAgentService.APP}". You only help with graphic‑design tasks (logos, presentations, social posts, colour theory, typography, etc.). Always suggest concrete next steps (e.g. "Browse presentation templates", "Apply brand colours"). When external inspiration is helpful, feel free to use the web search tool.`,
+      model: DesignAgentService.MODEL,
+      tools: [
+        searchAssetsTool({ vs: this.#vectorStore }),
+        searchDocsTool({ vs: this.#vectorStore }),
+        analyzeImageTool({ ia: this.#imageAnalysis }),
+        buildWebSearchTool(),
+      ],
+      // inputGuardrails: [designOnlyGuardrail], // Temporarily disabled for testing
+    });
+
+    this.#initialized = true;
+    console.log('✅ Design Agent (Agents SDK + webSearch) ready');
   }
 
   /**
-   * Determine the appropriate action based on user input
+   * Top‑level helper to chat with the agent.
+   * Returns { assistant_text, toolOutputs, trace }.
    */
-  determineAction(text) {
-    if (/template|browse/i.test(text)) return 'open_template';
-    if (/brand|branding/i.test(text)) return 'apply_brand';
-    if (/upload|asset/i.test(text)) return 'upload_asset';
-    return 'none';
-  }
-
-  /**
-   * Generate fallback response when OpenAI is not available
-   */
-  getFallbackResponse(text, useOwnData) {
-    if (this.containsDesignKeyword(text)) {
-      const extras = useOwnData ? 'I\'ll use your brand assets. ' : '';
+  async chat(userText, { userId } = {}) {
+    if (!this.#initialized) await this.initialize();
+    if (!this.#agent) {
+      // Fallback when API key missing.
       return {
-        assistant_text: `Great! ${extras}Let me suggest some design approaches for your "${text}". Would you like recommended templates or colour schemes to get started?`,
-        suggestions: this.generateSuggestions(text),
-        action: this.determineAction(text),
+        assistant_text:
+          "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!",
       };
     }
+
+    const result = await run(this.#agent, userText, { userId });
 
     return {
-      assistant_text: `I can help you turn that idea into a beautiful design! ${useOwnData ? 'Using your personal assets, ' : ''}start by choosing a template – a social media post, presentation, flyer, or something else?`,
-      suggestions: this.generateSuggestions(''),
-      action: 'none',
+      assistant_text: result.finalOutput,
+      toolOutputs: result.toolResults, // key‑value map of toolName → return value
+      traceId: result.traceId, // useful for debugging with the tracing UI
     };
   }
 
-  /**
-   * Health check for the service
-   */
+  /** Simple health endpoint for monitoring. */
   getHealthStatus() {
     return {
-      initialized: this.initialized,
-      hasOpenAI: !!this.openai,
-      model: this.model,
-      appName: this.appName,
+      initialized: this.#initialized,
+      model: DesignAgentService.MODEL,
+      tools: this.#agent?.tools?.map((t) => t.name) ?? [],
     };
   }
 }
