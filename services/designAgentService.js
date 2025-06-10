@@ -10,7 +10,7 @@ const vectorStore = require('./vectorStore');
 const imageAnalysis = require('./imageAnalysisService');
 
 // Dynamic imports for ES modules
-let Agent, run, tool, webSearchTool, z;
+let Agent, run, tool, webSearchTool, z, RunToolCallItem;
 
 /**
  * Function‑tool wrappers ----------------------------------------------------
@@ -41,11 +41,12 @@ class DesignAgentService {
       // Dynamic import of ES modules
       const agentsModule = await import('@openai/agents');
       const zodModule = await import('zod');
-      
+
       Agent = agentsModule.Agent;
       run = agentsModule.run;
       tool = agentsModule.tool;
       webSearchTool = agentsModule.webSearchTool;
+      RunToolCallItem = agentsModule.RunToolCallItem;
       z = zodModule.z;
 
       // Create tool functions after imports are available
@@ -181,9 +182,16 @@ class DesignAgentService {
 
     const result = await run(this.#agent, userText, { userId });
 
+    const toolOutputs = result.newItems
+      .filter((i) => i instanceof RunToolCallItem && i.rawItem.status === 'completed')
+      .reduce((acc, i) => {
+      acc[i.rawItem.name] = null;
+      return acc;
+      }, {});
+
     return {
       assistant_text: result.finalOutput,
-      toolOutputs: result.toolResults, // key‑value map of toolName → return value
+      toolOutputs, // key‑value map of toolName → return value
       traceId: result.traceId, // useful for debugging with the tracing UI
     };
   }
