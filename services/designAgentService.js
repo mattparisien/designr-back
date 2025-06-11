@@ -184,10 +184,12 @@ class DesignAgentService {
     const toolOutputs = result.newItems
       .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
       .reduce((acc, i) => {
-        acc[i.rawItem.name] = acc[i.rawItem.output];
+        acc[i.rawItem.name] = acc[i.output];
         return acc;
       }, {});
 
+      console.log(result.newItems
+      .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed'));
 
     return {
       assistant_text: result.finalOutput,
