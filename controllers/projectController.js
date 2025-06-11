@@ -125,8 +125,77 @@ exports.getProjectById = async (req, res) => {
   }
 };
 
-// Create new project
+// Create new project with simplified options
 exports.createProject = async (req, res) => {
+  try {
+    const { 
+      title = 'Untitled Project',
+      description = '',
+      type = 'presentation',
+      userId,
+      category,
+      templateId,
+      canvasSize
+    } = req.body;
+
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Generate a unique page ID
+    const { v4: uuidv4 } = require('uuid');
+    const pageId = uuidv4();
+
+    // Define default canvas sizes based on project type
+    const defaultCanvasSizes = {
+      presentation: { name: "Presentation 16:9", width: 1920, height: 1080 },
+      social: { name: "Instagram Post", width: 1080, height: 1080 },
+      print: { name: "Letter", width: 2550, height: 3300 },
+      custom: { name: "Custom", width: 1920, height: 1080 }
+    };
+
+    // Use provided canvas size or default based on type
+    const finalCanvasSize = canvasSize || defaultCanvasSizes[type] || defaultCanvasSizes.custom;
+
+    // Create the project data with defaults
+    const projectData = {
+      title,
+      description,
+      type,
+      userId,
+      category,
+      starred: false,
+      shared: false,
+      isTemplate: false,
+      canvasSize: finalCanvasSize,
+      pages: [
+        {
+          id: pageId,
+          name: 'Page 1',
+          canvasSize: finalCanvasSize,
+          elements: [],
+          background: {
+            type: 'color',
+            value: '#ffffff'
+          }
+        }
+      ],
+      metadata: templateId ? { templateId, createdFromTemplate: true } : {}
+    };
+
+    const newProject = new Project(projectData);
+    const savedProject = await newProject.save();
+    
+    res.status(201).json(savedProject);
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(400).json({ message: 'Failed to create project', error: error.message });
+  }
+};
+
+// Create project with full data (for backwards compatibility)
+exports.createProjectWithFullData = async (req, res) => {
   try {
     const projectData = req.body;
     
