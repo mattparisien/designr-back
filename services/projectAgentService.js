@@ -1,6 +1,6 @@
-// services/designAgentService.js
+// services/projectAgentService.js
 // ---------------------------------------------------------------------------
-// Design Assistant Agent Service — Agents SDK Edition (v4.1.0)
+// Project Assistant Agent Service — Agents SDK Edition (v4.1.0)
 // Now includes the built‑in `webSearchTool` for external inspiration.
 // Uses dynamic imports for ES modules in CommonJS environment.
 // ---------------------------------------------------------------------------
@@ -19,9 +19,9 @@ let Agent, run, tool, webSearchTool, z, RunToolCallOutputItem;
 let searchAssetsTool, searchDocsTool, analyzeImageTool, buildWebSearchTool, designOnlyGuardrail;
 
 /**
- * DesignAgentService --------------------------------------------------------
+ * ProjectAgentService --------------------------------------------------------
  */
-class DesignAgentService {
+class ProjectAgentService {
   #agent;
   #initialized = false;
   #vectorStore = vectorStore;
@@ -120,7 +120,7 @@ class DesignAgentService {
       ];
 
       designOnlyGuardrail = {
-        name: 'design‑only‑topics',
+        name: 'project‑focused‑topics',
         async check({ content }) {
           const lower = content.toLowerCase();
           const hit = FORBIDDEN.some((t) => lower.includes(t));
@@ -128,7 +128,7 @@ class DesignAgentService {
             return {
               success: false,
               message:
-                "I'm a Design Assistant focused only on helping you create amazing designs. Let's talk about your design projects instead! What would you like to create today?",
+                "I'm a Project Assistant focused on helping you create amazing designs and manage your projects. Let's talk about your creative projects instead! What would you like to create today?",
             };
           }
           return { success: true };
@@ -149,9 +149,9 @@ class DesignAgentService {
 
     // Build the Agent with tools + guardrails.
     this.#agent = new Agent({
-      name: 'Design Assistant',
-      instructions: `You are a Design Assistant for the design platform "${DesignAgentService.APP}". You only help with graphic‑design tasks (logos, presentations, social posts, colour theory, typography, etc.). Always suggest concrete next steps (e.g. "Browse presentation templates", "Apply brand colours"). When external inspiration is helpful, feel free to use the web search tool.`,
-      model: DesignAgentService.MODEL,
+      name: 'Project Assistant',
+      instructions: `You are a Project Assistant for the design platform "${ProjectAgentService.APP}". You help with graphic‑design tasks (logos, presentations, social posts, colour theory, typography, etc.) and project management. Always suggest concrete next steps (e.g. "Browse presentation templates", "Apply brand colours"). When external inspiration is helpful, feel free to use the web search tool.`,
+      model: ProjectAgentService.MODEL,
       tools: [
         searchAssetsTool({ vs: this.#vectorStore }),
         searchDocsTool({ vs: this.#vectorStore }),
@@ -162,7 +162,7 @@ class DesignAgentService {
     });
 
     this.#initialized = true;
-    console.log('✅ Design Agent (Agents SDK + webSearch) ready');
+    console.log('✅ Project Agent (Agents SDK + webSearch) ready');
   }
 
   /**
@@ -202,10 +202,10 @@ class DesignAgentService {
   getHealthStatus() {
     return {
       initialized: this.#initialized,
-      model: DesignAgentService.MODEL,
+      model: ProjectAgentService.MODEL,
       tools: this.#agent?.tools?.map((t) => t.name) ?? [],
     };
   }
 }
 
-module.exports = DesignAgentService;
+module.exports = ProjectAgentService;
