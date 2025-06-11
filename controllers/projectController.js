@@ -1,6 +1,7 @@
 const Project = require('../models/Project');
 const cloudinary = require('../config/cloudinary');
 const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
+const { generateCanvasPreviewThumbnail } = require('../utils/thumbnailGenerator');
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
@@ -144,8 +145,7 @@ exports.createProject = async (req, res) => {
     }
 
     // Generate a unique page ID
-    const { v4: uuidv4 } = require('uuid');
-    const pageId = uuidv4();
+    const pageId = require('crypto').randomBytes(16).toString('hex');
 
     // Define default canvas sizes based on project type
     const defaultCanvasSizes = {
@@ -158,6 +158,27 @@ exports.createProject = async (req, res) => {
     // Use provided canvas size or default based on type
     const finalCanvasSize = canvasSize || defaultCanvasSizes[type] || defaultCanvasSizes.custom;
 
+    // Define the default background for the page
+    const defaultBackground = {
+      type: 'color',
+      value: '#ffffff'
+    };
+
+    // Generate default thumbnail based on canvas background and dimensions
+    let thumbnailUrl = null;
+    try {
+      thumbnailUrl = await generateCanvasPreviewThumbnail(
+        finalCanvasSize,
+        defaultBackground,
+        userId,
+        [] // No elements for new projects
+      );
+      console.log('Generated default thumbnail:', thumbnailUrl);
+    } catch (thumbnailError) {
+      console.error('Failed to generate default thumbnail:', thumbnailError);
+      // Continue with project creation even if thumbnail generation fails
+    }
+
     // Create the project data with defaults
     const projectData = {
       title,
@@ -169,16 +190,14 @@ exports.createProject = async (req, res) => {
       shared: false,
       isTemplate: false,
       canvasSize: finalCanvasSize,
+      thumbnail: thumbnailUrl, // Add generated thumbnail
       pages: [
         {
           id: pageId,
           name: 'Page 1',
           canvasSize: finalCanvasSize,
           elements: [],
-          background: {
-            type: 'color',
-            value: '#ffffff'
-          }
+          background: defaultBackground
         }
       ],
       metadata: templateId ? { templateId, createdFromTemplate: true } : {}
