@@ -1,0 +1,41 @@
+// utils/fetchJson.js
+// Thin wrapper around fetch with uniform error handling
+
+async function fetchJson(url, options = {}) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+  const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
+  
+  const defaultOptions = {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+
+  const mergedOptions = {
+    ...defaultOptions,
+    ...options,
+    headers: {
+      ...defaultOptions.headers,
+      ...options.headers,
+    },
+  };
+
+  if (mergedOptions.body && typeof mergedOptions.body === 'object') {
+    mergedOptions.body = JSON.stringify(mergedOptions.body);
+  }
+
+  try {
+    const response = await fetch(fullUrl, mergedOptions);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`Fetch error for ${fullUrl}:`, error.message);
+    throw error;
+  }
+}
+
+module.exports = { fetchJson };
