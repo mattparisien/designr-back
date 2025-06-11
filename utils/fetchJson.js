@@ -25,9 +25,19 @@ async function fetchJson(url, options = {}) {
   }
 
   try {
+    // Debug logging for project creation
+    if (fullUrl.includes('/api/projects') && mergedOptions.method === 'POST') {
+      console.log('🔍 Debug - Project creation request:');
+      console.log('  URL:', fullUrl);
+      console.log('  Body:', mergedOptions.body);
+    }
+    
     const response = await fetch(fullUrl, mergedOptions);
     
     if (!response.ok) {
+      // Log response details for debugging
+      const responseText = await response.text();
+      console.error(`HTTP ${response.status} for ${fullUrl}:`, responseText);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 

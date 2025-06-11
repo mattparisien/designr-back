@@ -18,6 +18,9 @@ async function createSocialMediaTool() {
     }),
     execute: async ({ title, platform, category }, ctx) => {
       try {
+        console.log('🔍 Social Media Tool Context:', ctx);
+        console.log('🔍 UserId from context:', ctx.userId);
+        
         const canvasSize = platformSizes[platform];
         
         const projectData = {
@@ -28,6 +31,8 @@ async function createSocialMediaTool() {
           category,
           canvasSize
         };
+
+        console.log('🔍 Project data being sent:', projectData);
 
         const project = await fetchJson('/api/projects', {
           method: 'POST',
