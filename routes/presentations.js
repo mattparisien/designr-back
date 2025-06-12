@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const presentationController = require('../controllers/presentationController');
+const presentationController = require('../dist/controllers/presentationController');
 
 // GET all presentations (with optional filtering)
 router.get('/', presentationController.getPresentations);

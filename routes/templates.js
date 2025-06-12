@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const templateController = require('../controllers/templateController');
+const templateController = require('../dist/controllers/templateController');
 
 // GET all templates (with optional filtering)
 router.get('/', templateController.getTemplates);
