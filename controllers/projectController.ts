@@ -26,25 +26,13 @@ import { createPageId } from '@canva-clone/shared-types/dist/core/identifiers';
 
 // Import API types
 import type {
-  CreateProjectRequest,
-  GetProjectsRequest,
-  GetProjectRequest,
-  UpdateProjectRequest,
-  DeleteProjectRequest,
-  CloneProjectRequest,
-  ToggleTemplateRequest,
-  BulkProjectRequest
-} from '@canva-clone/shared-types/dist/api/requests/projects';
-
-import type {
   CreateProjectResponse,
   GetProjectsResponse,
   GetProjectResponse,
   UpdateProjectResponse,
   DeleteProjectResponse,
   CloneProjectResponse,
-  ToggleTemplateResponse,
-  BulkProjectResponse
+  ToggleTemplateResponse
 } from '@canva-clone/shared-types/dist/api/responses/projects';
 
 import type {
@@ -56,18 +44,10 @@ import {
   ErrorFactory
 } from '@canva-clone/shared-types/dist/api';
 
-import type {
-  TypedRequest,
-  TypedResponse
-} from '@canva-clone/shared-types/dist/express';
-
 const unlinkAsync = promisify(fs.unlink);
 
 // Get all projects (with optional filtering)
-export const getProjects = async (
-  req: TypedRequest<GetProjectsRequest>,
-  res: TypedResponse<{ success: true; data: Project[]; timestamp: string } | EnhancedErrorResponse>
-): Promise<void> => {
+export const getProjects = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, starred, category, type, isTemplate } = req.query;
 
@@ -83,27 +63,28 @@ export const getProjects = async (
       .select('title type userId thumbnail category starred shared isTemplate createdAt updatedAt')
       .sort({ updatedAt: -1 });
 
-    res.status(200).json({
+    // Use proper API response format
+    const response: { success: true; data: Project[]; timestamp: string } = {
       success: true,
       data: projects,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching projects:', error);
     const apiError = ErrorFactory.internal('Failed to fetch projects', error);
-    res.status(500).json({
+    const errorResponse: EnhancedErrorResponse = {
       success: false,
       error: apiError,
       timestamp: new Date().toISOString()
-    });
+    };
+    res.status(500).json(errorResponse);
   }
 };
 
 // Get projects with pagination
-export const getPaginatedProjects = async (
-  req: TypedRequest<GetProjectsRequest>,
-  res: TypedResponse<GetProjectsResponse | EnhancedErrorResponse>
-): Promise<void> => {
+export const getPaginatedProjects = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       page = '1',
@@ -154,7 +135,8 @@ export const getPaginatedProjects = async (
     // Calculate total pages
     const totalPages = Math.ceil(totalProjects / limitNumber);
 
-    res.status(200).json({
+    // Use proper API response format
+    const response: GetProjectsResponse = {
       success: true,
       data: projects,
       pagination: {
@@ -166,15 +148,18 @@ export const getPaginatedProjects = async (
         hasPrev: pageNumber > 1
       },
       timestamp: new Date().toISOString()
-    });
+    };
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching paginated projects:', error);
     const apiError = ErrorFactory.internal('Failed to fetch projects', error);
-    res.status(500).json({
+    const errorResponse: EnhancedErrorResponse = {
       success: false,
       error: apiError,
       timestamp: new Date().toISOString()
-    });
+    };
+    res.status(500).json(errorResponse);
   }
 };
 
@@ -199,14 +184,33 @@ export const getProjectById = async (req: Request, res: Response): Promise<void>
     }
 
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
+      const notFoundError = ErrorFactory.notFound('Project', id);
+      const errorResponse: EnhancedErrorResponse = {
+        success: false,
+        error: notFoundError,
+        timestamp: new Date().toISOString()
+      };
+      res.status(404).json(errorResponse);
       return;
     }
 
-    res.status(200).json(project);
+    // Use proper API response format
+    const response: GetProjectResponse = {
+      success: true,
+      data: project,
+      timestamp: new Date().toISOString()
+    };
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching project:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    const apiError = ErrorFactory.internal('Failed to fetch project', error);
+    const errorResponse: EnhancedErrorResponse = {
+      success: false,
+      error: apiError,
+      timestamp: new Date().toISOString()
+    };
+    res.status(500).json(errorResponse);
   }
 };
 
@@ -225,7 +229,16 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
 
     // Validate required fields
     if (!userId) {
-      res.status(400).json({ message: 'User ID is required' });
+      const validationError = ErrorFactory.validation(
+        [{ field: 'userId', message: 'User ID is required' }],
+        'User ID is required'
+      );
+      const errorResponse: EnhancedErrorResponse = {
+        success: false,
+        error: validationError,
+        timestamp: new Date().toISOString()
+      };
+      res.status(400).json(errorResponse);
       return;
     }
 
@@ -309,10 +322,23 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     const newProject = new Project(projectData);
     const savedProject = await newProject.save();
 
-    res.status(201).json(savedProject);
+    // Use proper API response format
+    const response: CreateProjectResponse = {
+      success: true,
+      data: savedProject,
+      timestamp: new Date().toISOString()
+    };
+
+    res.status(201).json(response);
   } catch (error) {
     console.error('Error creating project:', error);
-    res.status(400).json({ message: 'Failed to create project', error: (error as Error).message });
+    const apiError = ErrorFactory.internal('Failed to create project', error);
+    const errorResponse: EnhancedErrorResponse = {
+      success: false,
+      error: apiError,
+      timestamp: new Date().toISOString()
+    };
+    res.status(400).json(errorResponse);
   }
 };
 
@@ -461,15 +487,34 @@ export const deleteProject = async (req: Request<{ id: string }>, res: Response)
     }
 
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
+      const notFoundError = ErrorFactory.notFound('Project', id);
+      const errorResponse: EnhancedErrorResponse = {
+        success: false,
+        error: notFoundError,
+        timestamp: new Date().toISOString()
+      };
+      res.status(404).json(errorResponse);
       return;
     }
 
-    res.status(200).json({ message: 'Project deleted successfully' });
+    // Use proper API response format
+    const response: DeleteProjectResponse = {
+      success: true,
+      data: { message: 'Project deleted successfully' },
+      timestamp: new Date().toISOString()
+    };
+
+    res.status(200).json(response);
 
   } catch (error) {
     console.error('Error deleting project:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    const apiError = ErrorFactory.internal('Failed to delete project', error);
+    const errorResponse: EnhancedErrorResponse = {
+      success: false,
+      error: apiError,
+      timestamp: new Date().toISOString()
+    };
+    res.status(500).json(errorResponse);
   }
 };
 

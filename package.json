@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "start:ts": "ts-node server.ts",
-    "build": "tsc",
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "cp -r models dist/ && cp -r config dist/ && cp -r utils dist/ && cp -r middleware dist/ && cp -r services dist/",
     "dev": "nodemon server.js",
     "dev:ts": "nodemon --exec ts-node server.ts",
     "test": "echo \"Error: no test specified\" && exit 1",

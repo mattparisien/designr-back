@@ -105,4 +105,4 @@ const ProjectSchema = new mongoose.Schema({
   timestamps: true, // Automatically add createdAt and updatedAt fields
 });
 
-module.exports = mongoose.model('Project', ProjectSchema);
+module.exports = mongoose.models.Project || mongoose.model('Project', ProjectSchema);
