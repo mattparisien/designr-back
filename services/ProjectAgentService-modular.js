@@ -96,6 +96,73 @@ class ProjectAgentService {
     }
   }
 
+  /**
+   * Chat with the agent using conversation history.
+   * Returns { assistant_text, toolOutputs, traceId }.
+   */
+  async chatWithHistory(userText, conversationHistory = [], { userId } = {}) {
+    if (!this.#initialized) await this.initialize();
+    
+    if (!this.#agent) {
+      // Fallback when API key missing
+      return {
+        assistant_text:
+          "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!",
+      };
+    }
+
+    try {
+      const { run, RunToolCallOutputItem } = await requireDynamic();
+      
+      // Build conversation context for the prompt
+      let contextualMessage = userText;
+      
+      if (conversationHistory.length > 0) {
+        // Filter out system messages and format conversation history
+        const userMessages = conversationHistory
+          .filter(msg => msg.role !== 'system')
+          .slice(-10) // Keep last 10 messages for context
+          .map(msg => `${msg.role}: ${msg.content}`)
+          .join('\n');
+        
+        contextualMessage = `Previous conversation context:
+${userMessages}
+
+Current user message: ${userText}
+
+Please respond considering the conversation history above.`;
+      }
+
+      console.log(`💬 Processing chat with conversation context (${conversationHistory.length} previous messages)`);
+
+      // Use the agent's run method with contextual message
+      const result = await run(this.#agent, contextualMessage, { userId });
+
+      const toolOutputs = result.newItems
+        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
+        .reduce((acc, i) => {
+          acc[i.rawItem.name] = i.output;
+          return acc;
+        }, {});
+
+      console.log('Completed tool calls:', result.newItems
+        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
+        .map(i => i.rawItem.name));
+
+      return {
+        assistant_text: result.finalOutput,
+        toolOutputs, // key‑value map of toolName → return value
+        traceId: result.traceId, // useful for debugging with the tracing UI
+      };
+    } catch (error) {
+      console.error('❌ Chat with history error:', error.message);
+      return {
+        assistant_text: "I encountered an error while processing your request. Please try again.",
+        error: error.message,
+      };
+    }
+  }
+
   /** Simple health endpoint for monitoring. */
   getHealthStatus() {
     return {
