@@ -35,10 +35,10 @@ const ElementSchema = new mongoose.Schema({
 const PageSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String },
-  canvasSize: {
-    name: { type: String },
+  dimensions: {
     width: { type: Number, required: true },
-    height: { type: Number, required: true }
+    height: { type: Number, required: true },
+    aspectRatio: { type: String, required: true }
   },
   thumbnail: { type: String },
   elements: [ElementSchema],
@@ -93,10 +93,10 @@ const ProjectSchema = new mongoose.Schema({
     type: String
   }],
   pages: [PageSchema],
-  canvasSize: {
-    name: { type: String },
+  dimensions: {
     width: { type: Number, required: true },
-    height: { type: Number, required: true }
+    height: { type: Number, required: true },
+    aspectRatio: { type: String, required: true }
   },
   metadata: {
     type: mongoose.Schema.Types.Mixed

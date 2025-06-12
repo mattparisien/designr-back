@@ -7,15 +7,15 @@ const unlinkAsync = promisify(fs.unlink);
 
 /**
  * Generates a default thumbnail for a project based on canvas background and dimensions
- * @param {Object} canvasSize - Canvas size object with width and height
+ * @param {Object} dimensions - Dimensions object with width and height
  * @param {Object} background - Background object with type and value
  * @param {string} userId - User ID for organizing thumbnails in Cloudinary
  * @returns {Promise<string>} - Cloudinary URL of the generated thumbnail
  */
-const generateDefaultThumbnail = async (canvasSize, background = { type: 'color', value: '#ffffff' }, userId) => {
+const generateDefaultThumbnail = async (dimensions, background = { type: 'color', value: '#ffffff' }, userId) => {
   try {
     const thumbnailWidth = 400;
-    const thumbnailHeight = Math.round((canvasSize.height / canvasSize.width) * thumbnailWidth);
+    const thumbnailHeight = Math.round((dimensions.height / dimensions.width) * thumbnailWidth);
     
     // Create a solid color image based on background
     let backgroundColor = '#ffffff'; // Default white
@@ -73,16 +73,16 @@ const generateDefaultThumbnail = async (canvasSize, background = { type: 'color'
 
 /**
  * Generates a canvas preview thumbnail with background and basic styling
- * @param {Object} canvasSize - Canvas size object with width and height  
+ * @param {Object} dimensions - Dimensions object with width and height  
  * @param {Object} background - Background object with type and value
  * @param {string} userId - User ID for organizing thumbnails
  * @param {Array} elements - Optional array of canvas elements to render
  * @returns {Promise<string>} - Cloudinary URL of the generated thumbnail
  */
-const generateCanvasPreviewThumbnail = async (canvasSize, background = { type: 'color', value: '#ffffff' }, userId, elements = []) => {
+const generateCanvasPreviewThumbnail = async (dimensions, background = { type: 'color', value: '#ffffff' }, userId, elements = []) => {
   try {
     const maxThumbnailSize = 400;
-    const aspectRatio = canvasSize.width / canvasSize.height;
+    const aspectRatio = dimensions.width / dimensions.height;
     
     let thumbnailWidth, thumbnailHeight;
     
