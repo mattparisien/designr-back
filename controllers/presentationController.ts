@@ -11,32 +11,11 @@ import type {
 } from '@canva-clone/shared-types/dist/canvas/components/pages';
 import type { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
 import type { ProjectId, PageId } from '@canva-clone/shared-types/dist/core/identifiers';
-
-// Type definitions for request bodies
-interface CreatePresentationRequest {
-  title?: string;
-  userId: string;
-  category?: string;
-  dimensions?: Dimensions;
-  pages?: Page[];
-  thumbnail?: string;
-  starred?: boolean;
-  shared?: boolean;
-}
-
-interface UpdatePresentationRequest {
-  title?: string;
-  category?: string;
-  dimensions?: Dimensions;
-  pages?: Page[];
-  thumbnail?: string;
-  starred?: boolean;
-  shared?: boolean;
-}
-
-interface ClonePresentationRequest {
-  userId: string;
-}
+import type {
+  CreatePresentationPayload,
+  UpdatePresentationPayload,
+  ClonePresentationPayload
+} from '@canva-clone/shared-types/dist/design/payloads';
 
 // Get all presentations (with optional filtering)
 export const getPresentations = async (req: Request, res: Response): Promise<void> => {
@@ -78,7 +57,7 @@ export const getPresentationById = async (req: Request<{ id: string }>, res: Res
 };
 
 // Create new presentation
-export const createPresentation = async (req: Request<{}, {}, CreatePresentationRequest>, res: Response): Promise<void> => {
+export const createPresentation = async (req: Request<{}, {}, CreatePresentationPayload>, res: Response): Promise<void> => {
   try {
     const newPresentation = new Presentation(req.body);
     const savedPresentation = await newPresentation.save();
@@ -91,7 +70,7 @@ export const createPresentation = async (req: Request<{}, {}, CreatePresentation
 };
 
 // Update presentation
-export const updatePresentation = async (req: Request<{ id: string }, {}, UpdatePresentationRequest>, res: Response): Promise<void> => {
+export const updatePresentation = async (req: Request<{ id: string }, {}, UpdatePresentationPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -134,7 +113,7 @@ export const deletePresentation = async (req: Request<{ id: string }>, res: Resp
 };
 
 // Clone presentation
-export const clonePresentation = async (req: Request<{ id: string }, {}, ClonePresentationRequest>, res: Response): Promise<void> => {
+export const clonePresentation = async (req: Request<{ id: string }, {}, ClonePresentationPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { userId } = req.body;

@@ -18,37 +18,14 @@ import type {
 } from '@canva-clone/shared-types/dist/canvas/components/pages';
 import type { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
 import type { ProjectId, PageId } from '@canva-clone/shared-types/dist/core/identifiers';
+import type {
+  CreateProjectPayload,
+  UpdateProjectPayload,
+  CloneProjectPayload,
+  ToggleTemplatePayload
+} from '@canva-clone/shared-types/dist/design/payloads';
 
 const unlinkAsync = promisify(fs.unlink);
-
-// Type definitions for request bodies
-interface CreateProjectRequest {
-  title?: string;
-  description?: string;
-  type?: 'presentation' | 'social' | 'print' | 'custom';
-  userId: string;
-  category?: string;
-  templateId?: string;
-  dimensions?: Dimensions;
-}
-
-interface UpdateProjectRequest {
-  title?: string;
-  description?: string;
-  pages?: Page[];
-  thumbnail?: string;
-  starred?: boolean;
-  shared?: boolean;
-  updatedAt?: string;
-}
-
-interface CloneProjectRequest {
-  userId: string;
-}
-
-interface ToggleTemplateRequest {
-  isTemplate: boolean;
-}
 
 // Project data interface for the database
 interface ProjectData {
@@ -196,7 +173,7 @@ export const getProjectById = async (req: Request, res: Response): Promise<void>
 };
 
 // Create new project with simplified options
-export const createProject = async (req: Request<{}, any, CreateProjectRequest>, res: Response): Promise<void> => {
+export const createProject = async (req: Request<{}, any, CreateProjectPayload>, res: Response): Promise<void> => {
   try {
     const { 
       title = 'Untitled Project',
@@ -339,7 +316,7 @@ export const createProjectWithFullData = async (req: Request, res: Response): Pr
 };
 
 // Update project
-export const updateProject = async (req: Request<{ id: string }, any, UpdateProjectRequest>, res: Response): Promise<void> => {
+export const updateProject = async (req: Request<{ id: string }, any, UpdateProjectPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -448,7 +425,7 @@ export const deleteProject = async (req: Request, res: Response): Promise<void> 
 };
 
 // Clone project
-export const cloneProject = async (req: Request<{ id: string }, any, CloneProjectRequest>, res: Response): Promise<void> => {
+export const cloneProject = async (req: Request<{ id: string }, any, CloneProjectPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
@@ -508,7 +485,7 @@ export const getTemplates = async (req: Request, res: Response): Promise<void> =
 };
 
 // Convert project to template or vice versa
-export const toggleTemplate = async (req: Request<{ id: string }, any, ToggleTemplateRequest>, res: Response): Promise<void> => {
+export const toggleTemplate = async (req: Request<{ id: string }, any, ToggleTemplatePayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { isTemplate } = req.body;

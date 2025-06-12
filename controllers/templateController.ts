@@ -12,44 +12,12 @@ import type {
 } from '@canva-clone/shared-types/dist/canvas/components/pages';
 import type { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
 import type { ProjectId, PageId } from '@canva-clone/shared-types/dist/core/identifiers';
-
-// Type definitions for request bodies
-interface CreateTemplateRequest {
-  title?: string;
-  description?: string;
-  type?: 'presentation' | 'social' | 'print' | 'custom';
-  category: string;
-  author: string;
-  dimensions?: Dimensions;
-  pages?: Page[];
-  thumbnail?: string;
-  tags?: string[];
-  featured?: boolean;
-  popular?: boolean;
-}
-
-interface UpdateTemplateRequest {
-  title?: string;
-  description?: string;
-  type?: 'presentation' | 'social' | 'print' | 'custom';
-  category?: string;
-  author?: string;
-  dimensions?: Dimensions;
-  pages?: Page[];
-  thumbnail?: string;
-  tags?: string[];
-  featured?: boolean;
-  popular?: boolean;
-}
-
-interface UseTemplateRequest {
-  userId: string;
-}
-
-interface CreateTemplateFromProjectRequest {
-  category: string;
-  author: string;
-}
+import type {
+  CreateTemplatePayload,
+  UpdateTemplatePayload,
+  UseTemplatePayload,
+  CreateTemplateFromProjectPayload
+} from '@canva-clone/shared-types/dist/design/payloads';
 
 // Get all templates with optional filtering
 export const getTemplates = async (req: Request, res: Response): Promise<void> => {
@@ -97,7 +65,7 @@ export const getTemplateById = async (req: Request, res: Response): Promise<void
 };
 
 // Create new template
-export const createTemplate = async (req: Request<{}, {}, CreateTemplateRequest>, res: Response): Promise<void> => {
+export const createTemplate = async (req: Request<{}, {}, CreateTemplatePayload>, res: Response): Promise<void> => {
   try {
     const templateData = req.body;
     
@@ -124,7 +92,7 @@ export const createTemplate = async (req: Request<{}, {}, CreateTemplateRequest>
 };
 
 // Update template
-export const updateTemplate = async (req: Request<{ id: string }, {}, UpdateTemplateRequest>, res: Response): Promise<void> => {
+export const updateTemplate = async (req: Request<{ id: string }, {}, UpdateTemplatePayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -166,7 +134,7 @@ export const deleteTemplate = async (req: Request<{ id: string }>, res: Response
 };
 
 // Create a project from a template
-export const useTemplate = async (req: Request<{ id: string }, {}, UseTemplateRequest>, res: Response): Promise<void> => {
+export const useTemplate = async (req: Request<{ id: string }, {}, UseTemplatePayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
@@ -213,7 +181,7 @@ export const useTemplate = async (req: Request<{ id: string }, {}, UseTemplateRe
 };
 
 // Convert existing project to template
-export const createTemplateFromProject = async (req: Request<{ projectId: string }, {}, CreateTemplateFromProjectRequest>, res: Response): Promise<void> => {
+export const createTemplateFromProject = async (req: Request<{ projectId: string }, {}, CreateTemplateFromProjectPayload>, res: Response): Promise<void> => {
   try {
     const { projectId } = req.params;
     const { category, author } = req.body;
