@@ -22,6 +22,7 @@ import type {
 } from '@canva-clone/shared-types/dist/design/payloads';
 import { Project } from '@canva-clone/shared-types/dist/design/models/project';
 import { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
+import { createPageId } from '@canva-clone/shared-types/dist/core/identifiers';
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -165,7 +166,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     }
 
     // Generate a unique page ID
-    const pageId = crypto.randomBytes(16).toString('hex');
+    const pageId = createPageId(crypto.randomBytes(16).toString('hex'));
 
     // Define default canvas sizes based on project type
     const defaultPageDimensions: Dimensions = {
@@ -173,7 +174,6 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       height: 1080,
       aspectRatio: '16:9'
     };
-
 
     // Use provided dimensions or default based on type
     const pageDimensions: Dimensions = dimensions ? {
@@ -191,8 +191,15 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     // Generate default thumbnail based on canvas background and dimensions
     let thumbnailUrl: string | undefined = undefined;
     try {
+      // Convert dimensions to legacy format for thumbnail generator
+      const legacyCanvasSize = {
+        name: `${type} Canvas`,
+        width: pageDimensions.width,
+        height: pageDimensions.height
+      };
+      
       thumbnailUrl = await generateCanvasPreviewThumbnail(
-        pageDimensions,
+        legacyCanvasSize,
         defaultBackground,
         userId,
         [] // No elements for new projects
@@ -203,8 +210,8 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       // Continue with project creation even if thumbnail generation fails
     }
 
-    // Create the project data with defaults
-    const projectData: Project = {
+    // Create the project data compatible with existing database structure
+    const projectData = {
       title,
       description,
       type,
@@ -213,22 +220,21 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       starred: false,
       shared: false,
       isTemplate: false,
-      designSpec: {
-        mainType: type,
-        platform: undefined, // Set based on type if needed
-        format: undefined, // Set based on type if needed
-        dimensions: {
-          width: pageDimensions.width,
-          height: pageDimensions.height,
-          aspectRatio: pageDimensions.aspectRatio
-        }
+      canvasSize: {
+        name: `${type} Canvas`,
+        width: pageDimensions.width,
+        height: pageDimensions.height
       },
-      thumbnail: thumbnailUrl, // Add generated thumbnail
+      thumbnail: thumbnailUrl,
       pages: [
         {
           id: pageId,
           name: 'Page 1',
-          dimensions: pageDimensions, // Use the final canvas size
+          canvasSize: {
+            name: `${type} Canvas`,
+            width: pageDimensions.width,
+            height: pageDimensions.height
+          },
           elements: [],
           background: defaultBackground
         }
