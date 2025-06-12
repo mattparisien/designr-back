@@ -5,10 +5,10 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 
 // Import JavaScript modules using require
-const Project = require('../../models/Project');
-const cloudinary = require('../../config/cloudinary');
-const { uploadToCloudinary } = require('../../utils/cloudinaryUploader');
-const { generateCanvasPreviewThumbnail } = require('../../utils/thumbnailGenerator');
+const Project = require('../models/Project');
+const cloudinary = require('../config/cloudinary');
+const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
+const { generateCanvasPreviewThumbnail } = require('../utils/thumbnailGenerator');
 
 // Import shared types
 import type { 
@@ -22,35 +22,12 @@ import type {
   CreateProjectPayload,
   UpdateProjectPayload,
   CloneProjectPayload,
-  ToggleTemplatePayload
+  ToggleTemplatePayload,
+  CreateProjectWithFullDataPayload
 } from '@canva-clone/shared-types/dist/design/payloads';
+import type { Project as ProjectType } from '@canva-clone/shared-types/dist/design/models/project';
 
 const unlinkAsync = promisify(fs.unlink);
-
-// Project data interface for the database
-interface ProjectData {
-  title: string;
-  description: string;
-  type: string;
-  userId: string;
-  category?: string;
-  starred: boolean;
-  shared: boolean;
-  isTemplate: boolean;
-  dimensions: Dimensions;
-  thumbnail?: string | null;
-  pages: Array<{
-    id: string;
-    name: string;
-    dimensions: Dimensions;
-    elements: any[];
-    background: CanvasBackground;
-  }>;
-  metadata?: {
-    templateId?: string;
-    createdFromTemplate?: boolean;
-  };
-}
 
 // Get all projects (with optional filtering)
 export const getProjects = async (req: Request, res: Response): Promise<void> => {
@@ -77,11 +54,11 @@ export const getProjects = async (req: Request, res: Response): Promise<void> =>
 };
 
 // Get projects with pagination
-export const getPaginatedProjects = async (req: Request, res: Response): Promise<void> => {
+exports.getPaginatedProjects = async (req, res) => {
   try {
     const { 
-      page = '1', 
-      limit = '10', 
+      page = 1, 
+      limit = 10, 
       userId, 
       starred, 
       shared,
@@ -92,12 +69,12 @@ export const getPaginatedProjects = async (req: Request, res: Response): Promise
     } = req.query;
 
     // Convert string parameters to appropriate types
-    const pageNumber = parseInt(page as string, 10);
-    const limitNumber = parseInt(limit as string, 10);
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
     
     // Build filter object based on query params
-    const filter: any = {};
+    const filter = {};
     if (userId) filter.userId = userId;
     if (starred) filter.starred = starred === 'true';
     if (shared) filter.shared = shared === 'true';
@@ -136,12 +113,12 @@ export const getPaginatedProjects = async (req: Request, res: Response): Promise
     });
   } catch (error) {
     console.error('Error fetching paginated projects:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
 // Get project by ID
-export const getProjectById = async (req: Request, res: Response): Promise<void> => {
+exports.getProjectById = async (req, res) => {
   try {
     // Use findOne with a custom ID field if the ID is not a valid ObjectId
     const id = req.params.id;
@@ -161,14 +138,13 @@ export const getProjectById = async (req: Request, res: Response): Promise<void>
     }
     
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
-      return;
+      return res.status(404).json({ message: 'Project not found' });
     }
     
     res.status(200).json(project);
   } catch (error) {
     console.error('Error fetching project:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -194,16 +170,20 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     // Generate a unique page ID
     const pageId = crypto.randomBytes(16).toString('hex');
 
-    // Define default dimensions based on project type
-    const defaultDimensions: Record<string, Dimensions> = {
-      presentation: { width: 1920, height: 1080, aspectRatio: '16:9' },
-      social: { width: 1080, height: 1080, aspectRatio: '1:1' },
-      print: { width: 2550, height: 3300, aspectRatio: '4:3' },
-      custom: { width: 1920, height: 1080, aspectRatio: '16:9' }
+    // Define default canvas sizes based on project type
+    const defaultCanvasSizes = {
+      presentation: { name: "Presentation 16:9", width: 1920, height: 1080 },
+      social: { name: "Instagram Post", width: 1080, height: 1080 },
+      print: { name: "Letter", width: 2550, height: 3300 },
+      custom: { name: "Custom", width: 1920, height: 1080 }
     };
 
     // Use provided dimensions or default based on type
-    const finalDimensions = dimensions || defaultDimensions[type] || defaultDimensions.custom;
+    const finalCanvasSize = dimensions ? {
+      name: `${type} Canvas`,
+      width: dimensions.width,
+      height: dimensions.height
+    } : defaultCanvasSizes[type as keyof typeof defaultCanvasSizes] || defaultCanvasSizes.custom;
 
     // Define the default background for the page
     const defaultBackground: CanvasBackground = {
@@ -214,15 +194,8 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     // Generate default thumbnail based on canvas background and dimensions
     let thumbnailUrl: string | null = null;
     try {
-      // Convert dimensions to legacy canvasSize format for thumbnail generator
-      const legacyCanvasSize = {
-        name: `${type} Canvas`,
-        width: finalDimensions.width,
-        height: finalDimensions.height
-      };
-      
       thumbnailUrl = await generateCanvasPreviewThumbnail(
-        legacyCanvasSize,
+        finalCanvasSize,
         defaultBackground,
         userId,
         [] // No elements for new projects
@@ -233,8 +206,8 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       // Continue with project creation even if thumbnail generation fails
     }
 
-    // Create the project data with new dimensions structure
-    const projectData: ProjectData = {
+    // Create the project data with defaults
+    const projectData = {
       title,
       description,
       type,
@@ -243,13 +216,13 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       starred: false,
       shared: false,
       isTemplate: false,
-      dimensions: finalDimensions, // Use new dimensions structure
-      thumbnail: thumbnailUrl,
+      canvasSize: finalCanvasSize,
+      thumbnail: thumbnailUrl, // Add generated thumbnail
       pages: [
         {
           id: pageId,
           name: 'Page 1',
-          dimensions: finalDimensions, // Use new dimensions structure
+          canvasSize: finalCanvasSize,
           elements: [],
           background: defaultBackground
         }
@@ -268,7 +241,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
 };
 
 // Create project with full data (for backwards compatibility)
-export const createProjectWithFullData = async (req: Request, res: Response): Promise<void> => {
+exports.createProjectWithFullData = async (req, res) => {
   try {
     const projectData = req.body;
     
@@ -311,12 +284,12 @@ export const createProjectWithFullData = async (req: Request, res: Response): Pr
     res.status(201).json(savedProject);
   } catch (error) {
     console.error('Error creating project:', error);
-    res.status(400).json({ message: 'Failed to create project', error: (error as Error).message });
+    res.status(400).json({ message: 'Failed to create project', error: error.message });
   }
 };
 
 // Update project
-export const updateProject = async (req: Request<{ id: string }, any, UpdateProjectPayload>, res: Response): Promise<void> => {
+exports.updateProject = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -330,8 +303,7 @@ export const updateProject = async (req: Request<{ id: string }, any, UpdateProj
           : await Project.findOne({ $or: [{ _id: id }, { 'pages.id': id }] });
           
         if (!project) {
-          res.status(404).json({ message: 'Project not found' });
-          return;
+          return res.status(404).json({ message: 'Project not found' });
         }
         
         // Upload the thumbnail to Cloudinary
@@ -383,19 +355,18 @@ export const updateProject = async (req: Request<{ id: string }, any, UpdateProj
     }
     
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
-      return;
+      return res.status(404).json({ message: 'Project not found' });
     }
     
     res.status(200).json(project);
   } catch (error) {
     console.error('Error updating project:', error);
-    res.status(400).json({ message: 'Failed to update project', error: (error as Error).message });
+    res.status(400).json({ message: 'Failed to update project', error: error.message });
   }
 };
 
 // Delete project
-export const deleteProject = async (req: Request, res: Response): Promise<void> => {
+exports.deleteProject = async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -412,39 +383,36 @@ export const deleteProject = async (req: Request, res: Response): Promise<void> 
     }
     
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
-      return;
+      return res.status(404).json({ message: 'Project not found' });
     }
     
     res.status(200).json({ message: 'Project deleted successfully' });
     
   } catch (error) {
     console.error('Error deleting project:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
 // Clone project
-export const cloneProject = async (req: Request<{ id: string }, any, CloneProjectPayload>, res: Response): Promise<void> => {
+exports.cloneProject = async (req, res) => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
     
     if (!userId) {
-      res.status(400).json({ message: 'User ID is required for cloning' });
-      return;
+      return res.status(400).json({ message: 'User ID is required for cloning' });
     }
     
     const project = await Project.findById(id);
     
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
-      return;
+      return res.status(404).json({ message: 'Project not found' });
     }
     
     // Create a new project object without the _id field
     const projectData = project.toObject();
-    delete (projectData as any)._id;
+    delete projectData._id;
     
     // Update fields for the cloned project
     projectData.userId = userId;
@@ -459,17 +427,17 @@ export const cloneProject = async (req: Request<{ id: string }, any, CloneProjec
     res.status(201).json(savedProject);
   } catch (error) {
     console.error('Error cloning project:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
 // Get all templates
-export const getTemplates = async (req: Request, res: Response): Promise<void> => {
+exports.getTemplates = async (req, res) => {
   try {
     const { category, type } = req.query;
     
     // Build filter object based on query params
-    const filter: any = { isTemplate: true };
+    const filter = { isTemplate: true };
     if (category) filter.category = category;
     if (type) filter.type = type;
     
@@ -480,19 +448,18 @@ export const getTemplates = async (req: Request, res: Response): Promise<void> =
     res.status(200).json(templates);
   } catch (error) {
     console.error('Error fetching templates:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
 // Convert project to template or vice versa
-export const toggleTemplate = async (req: Request<{ id: string }, any, ToggleTemplatePayload>, res: Response): Promise<void> => {
+exports.toggleTemplate = async (req, res) => {
   try {
     const { id } = req.params;
     const { isTemplate } = req.body;
     
     if (isTemplate === undefined) {
-      res.status(400).json({ message: 'isTemplate field is required' });
-      return;
+      return res.status(400).json({ message: 'isTemplate field is required' });
     }
     
     let project;
@@ -512,13 +479,12 @@ export const toggleTemplate = async (req: Request<{ id: string }, any, ToggleTem
     }
     
     if (!project) {
-      res.status(404).json({ message: 'Project not found' });
-      return;
+      return res.status(404).json({ message: 'Project not found' });
     }
     
     res.status(200).json(project);
   } catch (error) {
     console.error('Error updating project template status:', error);
-    res.status(400).json({ message: 'Failed to update project', error: (error as Error).message });
+    res.status(400).json({ message: 'Failed to update project', error: error.message });
   }
 };
