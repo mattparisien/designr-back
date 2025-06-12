@@ -108,13 +108,13 @@ class ProjectAgentService {
         run,
         user      : u,
         assistant : a,
-        system    : s,
+        system,
         RunToolCallOutputItem,
       } = await requireDynamic();
 
       // 1️⃣ Base system context.
       const messages = [
-        s(`You are a helpful design assistant for a Canva‑like platform. Help users create projects, find templates, and work with design elements. You have access to tools for creating projects, searching assets, and analysing images. User ID for this session: ${userId || 'anonymous'}. Maintain context from previous messages in this conversation.`),
+        system(`You are a helpful design assistant for a Canva‑like platform. Help users create projects, find templates, and work with design elements. You have access to tools for creating projects, searching assets, and analysing images. User ID for this session: ${userId || 'anonymous'}. Maintain context from previous messages in this conversation.`),
       ];
 
       // 2️⃣ Re‑wrap recent history as MCP items (drop system messages to avoid duplicates).
