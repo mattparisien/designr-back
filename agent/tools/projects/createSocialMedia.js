@@ -18,8 +18,8 @@ async function createSocialMediaTool() {
     }),
     execute: async ({ title, platform, category }, ctx) => {
       try {
-        console.log('🔍 Social Media Tool Context:', ctx);
-        console.log('🔍 UserId from context:', ctx.userId);
+        // Extract userId from context - try multiple possible locations
+        const userId = ctx.userId || ctx.context?.userId || ctx.user?.id || ctx.user || 'default-user';
         
         const canvasSize = platformSizes[platform];
         
@@ -27,12 +27,10 @@ async function createSocialMediaTool() {
           title,
           description: `Optimized for ${platform.replace('-', ' ')}`,
           type: 'social',
-          userId: ctx.userId,
+          userId: userId,
           category,
           canvasSize
         };
-
-        console.log('🔍 Project data being sent:', projectData);
 
         const project = await fetchJson('/api/projects', {
           method: 'POST',

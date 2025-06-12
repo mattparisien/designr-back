@@ -18,6 +18,9 @@ async function createCustomProjectTool() {
     }),
     execute: async ({ title, width, height, category }, ctx) => {
       try {
+        // Extract userId from context - try multiple possible locations
+        const userId = ctx.userId || ctx.context?.userId || ctx.user?.id || ctx.user || 'default-user';
+        
         const canvasSize = {
           name: `Custom ${width}x${height}`,
           width,
@@ -28,7 +31,7 @@ async function createCustomProjectTool() {
           title,
           description: `Custom dimensions: ${width}x${height}px`,
           type: 'custom',
-          userId: ctx.userId,
+          userId: userId,
           category,
           canvasSize
         };

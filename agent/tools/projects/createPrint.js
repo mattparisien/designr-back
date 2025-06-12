@@ -18,13 +18,16 @@ async function createPrintTool() {
     }),
     execute: async ({ title, format, category }, ctx) => {
       try {
+        // Extract userId from context - try multiple possible locations
+        const userId = ctx.userId || ctx.context?.userId || ctx.user?.id || ctx.user || 'default-user';
+        
         const canvasSize = printSizes[format];
         
         const projectData = {
           title,
           description: `Print-ready ${format.replace('-', ' ')} design`,
           type: 'print',
-          userId: ctx.userId,
+          userId: userId,
           category,
           canvasSize
         };

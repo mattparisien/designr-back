@@ -17,6 +17,9 @@ async function createPresentationTool() {
     }),
     execute: async ({ title, category, aspectRatio }, ctx) => {
       try {
+        // Extract userId from context - try multiple possible locations
+        const userId = ctx.userId || ctx.context?.userId || ctx.user?.id || ctx.user || 'default-user';
+        
         const canvasSize = aspectRatio === '4:3' 
           ? { name: "Presentation 4:3", width: 1024, height: 768 }
           : { name: "Presentation 16:9", width: 1920, height: 1080 };
@@ -25,7 +28,7 @@ async function createPresentationTool() {
           title,
           description: '',
           type: 'presentation',
-          userId: ctx.userId,
+          userId: userId,
           category,
           canvasSize
         };

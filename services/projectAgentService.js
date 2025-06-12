@@ -69,7 +69,14 @@ class ProjectAgentService {
 
     try {
       const { run, RunToolCallOutputItem } = await requireDynamic();
-      const result = await run(this.#agent, userText, { userId });
+      
+      // Pass userId in the messages as system context
+      const messages = [
+        { role: 'system', content: `User ID for this session: ${userId || 'anonymous'}` },
+        { role: 'user', content: userText }
+      ];
+      
+      const result = await run(this.#agent, messages, { userId });
 
       const toolOutputs = result.newItems
         .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
