@@ -11,11 +11,19 @@ async function listProjectTypesTool() {
     name: 'list_project_types',
     description: 'List available project types and their supported formats/platforms in hierarchical structure.',
     parameters: z.object({
-      mainType: z.enum(['social', 'presentation', 'print', 'custom']).optional().describe('Filter by main project type'),
+      mainType: z.string().nullable().describe('Filter by main project type (social, presentation, print, custom)'),
       detailed: z.boolean().default(false).describe('Show detailed format specifications including dimensions')
     }),
     execute: async ({ mainType, detailed }) => {
       const projectTypes = {};
+      
+      // Validate mainType if provided
+      const validTypes = ['social', 'presentation', 'print', 'custom'];
+      if (mainType && !validTypes.includes(mainType)) {
+        return {
+          error: `Invalid mainType. Must be one of: ${validTypes.join(', ')}`
+        };
+      }
 
       if (!mainType || mainType === 'social') {
         projectTypes.social = {
