@@ -1,8 +1,8 @@
+import * as crypto from 'crypto';
 import { Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { promisify } from 'util';
-import crypto from 'crypto';
 
 // Import JavaScript modules using require
 const Project = require('../models/Project');
@@ -11,21 +11,17 @@ const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
 const { generateCanvasPreviewThumbnail } = require('../utils/thumbnailGenerator');
 
 // Import shared types
-import type { 
-  Page,
-  CreatePageData,
+import type {
   CanvasBackground
 } from '@canva-clone/shared-types/dist/canvas/components/pages';
-import type { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
-import type { ProjectId, PageId } from '@canva-clone/shared-types/dist/core/identifiers';
 import type {
-  CreateProjectPayload,
-  UpdateProjectPayload,
   CloneProjectPayload,
+  CreateProjectPayload,
   ToggleTemplatePayload,
-  CreateProjectWithFullDataPayload
+  UpdateProjectPayload
 } from '@canva-clone/shared-types/dist/design/payloads';
-import type { Project as ProjectType } from '@canva-clone/shared-types/dist/design/models/project';
+import { Project } from '@canva-clone/shared-types/dist/design/models/project';
+import { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -33,7 +29,7 @@ const unlinkAsync = promisify(fs.unlink);
 export const getProjects = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, starred, category, type, isTemplate } = req.query;
-    
+
     // Build filter object based on query params
     const filter: any = {};
     if (userId) filter.userId = userId;
@@ -41,11 +37,11 @@ export const getProjects = async (req: Request, res: Response): Promise<void> =>
     if (category) filter.category = category;
     if (type) filter.type = type;
     if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
-    
+
     const projects = await Project.find(filter)
       .select('title type userId thumbnail category starred shared isTemplate createdAt updatedAt')
       .sort({ updatedAt: -1 });
-      
+
     res.status(200).json(projects);
   } catch (error) {
     console.error('Error fetching projects:', error);
@@ -54,34 +50,34 @@ export const getProjects = async (req: Request, res: Response): Promise<void> =>
 };
 
 // Get projects with pagination
-exports.getPaginatedProjects = async (req, res) => {
+export const getPaginatedProjects = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      userId, 
-      starred, 
+    const {
+      page = '1',
+      limit = '10',
+      userId,
+      starred,
       shared,
-      category, 
-      type, 
+      category,
+      type,
       isTemplate,
       search
     } = req.query;
 
     // Convert string parameters to appropriate types
-    const pageNumber = parseInt(page, 10);
-    const limitNumber = parseInt(limit, 10);
+    const pageNumber = parseInt(page as string, 10);
+    const limitNumber = parseInt(limit as string, 10);
     const skip = (pageNumber - 1) * limitNumber;
-    
+
     // Build filter object based on query params
-    const filter = {};
+    const filter: any = {};
     if (userId) filter.userId = userId;
     if (starred) filter.starred = starred === 'true';
     if (shared) filter.shared = shared === 'true';
     if (category) filter.category = category;
     if (type) filter.type = type;
     if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
-    
+
     // Add text search if provided
     if (search) {
       filter.$or = [
@@ -91,7 +87,7 @@ exports.getPaginatedProjects = async (req, res) => {
         { category: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Execute queries in parallel for better performance
     const [projects, totalProjects] = await Promise.all([
       Project.find(filter)
@@ -101,10 +97,10 @@ exports.getPaginatedProjects = async (req, res) => {
         .limit(limitNumber),
       Project.countDocuments(filter)
     ]);
-    
+
     // Calculate total pages
     const totalPages = Math.ceil(totalProjects / limitNumber);
-    
+
     res.status(200).json({
       projects,
       totalProjects,
@@ -113,45 +109,46 @@ exports.getPaginatedProjects = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching paginated projects:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };
 
 // Get project by ID
-exports.getProjectById = async (req, res) => {
+export const getProjectById = async (req: Request, res: Response): Promise<void> => {
   try {
     // Use findOne with a custom ID field if the ID is not a valid ObjectId
     const id = req.params.id;
     let project;
-    
+
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
       // If it's a valid ObjectId, use findById
       project = await Project.findById(id);
     } else {
       // If it's a custom ID format, try to find by other fields
-      project = await Project.findOne({ 
+      project = await Project.findOne({
         $or: [
           { _id: id },
           { 'pages.id': id } // If it might be a page ID
         ]
       });
     }
-    
+
     if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+      res.status(404).json({ message: 'Project not found' });
+      return;
     }
-    
+
     res.status(200).json(project);
   } catch (error) {
     console.error('Error fetching project:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };
 
 // Create new project with simplified options
 export const createProject = async (req: Request<{}, any, CreateProjectPayload>, res: Response): Promise<void> => {
   try {
-    const { 
+    const {
       title = 'Untitled Project',
       description = '',
       type = 'presentation',
@@ -171,19 +168,19 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     const pageId = crypto.randomBytes(16).toString('hex');
 
     // Define default canvas sizes based on project type
-    const defaultCanvasSizes = {
-      presentation: { name: "Presentation 16:9", width: 1920, height: 1080 },
-      social: { name: "Instagram Post", width: 1080, height: 1080 },
-      print: { name: "Letter", width: 2550, height: 3300 },
-      custom: { name: "Custom", width: 1920, height: 1080 }
+    const defaultPageDimensions: Dimensions = {
+      width: 1920,
+      height: 1080,
+      aspectRatio: '16:9'
     };
 
+
     // Use provided dimensions or default based on type
-    const finalCanvasSize = dimensions ? {
-      name: `${type} Canvas`,
+    const pageDimensions: Dimensions = dimensions ? {
       width: dimensions.width,
-      height: dimensions.height
-    } : defaultCanvasSizes[type as keyof typeof defaultCanvasSizes] || defaultCanvasSizes.custom;
+      height: dimensions.height,
+      aspectRatio: dimensions.aspectRatio
+    } : defaultPageDimensions;
 
     // Define the default background for the page
     const defaultBackground: CanvasBackground = {
@@ -192,10 +189,10 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     };
 
     // Generate default thumbnail based on canvas background and dimensions
-    let thumbnailUrl: string | null = null;
+    let thumbnailUrl: string | undefined = undefined;
     try {
       thumbnailUrl = await generateCanvasPreviewThumbnail(
-        finalCanvasSize,
+        pageDimensions,
         defaultBackground,
         userId,
         [] // No elements for new projects
@@ -207,7 +204,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     }
 
     // Create the project data with defaults
-    const projectData = {
+    const projectData: Project = {
       title,
       description,
       type,
@@ -216,13 +213,22 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       starred: false,
       shared: false,
       isTemplate: false,
-      canvasSize: finalCanvasSize,
+      designSpec: {
+        mainType: type,
+        platform: undefined, // Set based on type if needed
+        format: undefined, // Set based on type if needed
+        dimensions: {
+          width: pageDimensions.width,
+          height: pageDimensions.height,
+          aspectRatio: pageDimensions.aspectRatio
+        }
+      },
       thumbnail: thumbnailUrl, // Add generated thumbnail
       pages: [
         {
           id: pageId,
           name: 'Page 1',
-          canvasSize: finalCanvasSize,
+          dimensions: pageDimensions, // Use the final canvas size
           elements: [],
           background: defaultBackground
         }
@@ -232,7 +238,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
 
     const newProject = new Project(projectData);
     const savedProject = await newProject.save();
-    
+
     res.status(201).json(savedProject);
   } catch (error) {
     console.error('Error creating project:', error);
@@ -241,10 +247,10 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
 };
 
 // Create project with full data (for backwards compatibility)
-exports.createProjectWithFullData = async (req, res) => {
+export const createProjectWithFullData = async (req: Request, res: Response): Promise<void> => {
   try {
     const projectData = req.body;
-    
+
     // Handle thumbnail if it's a data URL (base64)
     if (projectData.thumbnail && projectData.thumbnail.startsWith('data:image')) {
       try {
@@ -252,24 +258,24 @@ exports.createProjectWithFullData = async (req, res) => {
         const cloudinaryFolder = `users/${projectData.userId}/thumbnails`;
         // Create a temporary file with the base64 data in the project's temp-uploads directory
         const tempDir = path.join(__dirname, '../temp-uploads');
-        
+
         // Ensure temp directory exists
         if (!fs.existsSync(tempDir)) {
           fs.mkdirSync(tempDir, { recursive: true });
         }
-        
+
         const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
-        
+
         // Extract the base64 data without the prefix
         const base64Data = projectData.thumbnail.replace(/^data:image\/\w+;base64,/, "");
         await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
-        
+
         // Upload to Cloudinary
         const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
-        
+
         // Replace the data URL with the Cloudinary URL
         projectData.thumbnail = uploadResult.secure_url;
-        
+
         // Clean up the temporary file
         await unlinkAsync(tmpFilePath);
       } catch (thumbnailError) {
@@ -277,57 +283,58 @@ exports.createProjectWithFullData = async (req, res) => {
         // Continue with project creation even if thumbnail processing fails
       }
     }
-    
+
     const newProject = new Project(projectData);
     const savedProject = await newProject.save();
-    
+
     res.status(201).json(savedProject);
   } catch (error) {
     console.error('Error creating project:', error);
-    res.status(400).json({ message: 'Failed to create project', error: error.message });
+    res.status(400).json({ message: 'Failed to create project', error: (error as Error).message });
   }
 };
 
 // Update project
-exports.updateProject = async (req, res) => {
+export const updateProject = async (req: Request<{ id: string }, any, UpdateProjectPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    
+
     // Handle thumbnail update if it's a data URL (base64)
     if (updates.thumbnail && updates.thumbnail.startsWith('data:image')) {
       try {
         // Find the project to get the user ID
-        const project = id.match(/^[0-9a-fA-F]{24}$/) 
+        const project = id.match(/^[0-9a-fA-F]{24}$/)
           ? await Project.findById(id)
           : await Project.findOne({ $or: [{ _id: id }, { 'pages.id': id }] });
-          
+
         if (!project) {
-          return res.status(404).json({ message: 'Project not found' });
+          res.status(404).json({ message: 'Project not found' });
+          return;
         }
-        
+
         // Upload the thumbnail to Cloudinary
         const cloudinaryFolder = `users/${project.userId}/thumbnails`;
         // Create a temporary file with the base64 data in the project's temp-uploads directory
         const tempDir = path.join(__dirname, '../temp-uploads');
-        
+
         // Ensure temp directory exists
         if (!fs.existsSync(tempDir)) {
           fs.mkdirSync(tempDir, { recursive: true });
         }
-        
+
         const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
-        
+
         // Extract the base64 data without the prefix
         const base64Data = updates.thumbnail.replace(/^data:image\/\w+;base64,/, "");
         await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
-        
+
         // Upload to Cloudinary
         const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
-        
+
         // Replace the data URL with the Cloudinary URL
         updates.thumbnail = uploadResult.secure_url;
-        
+
         // Clean up the temporary file
         await unlinkAsync(tmpFilePath);
       } catch (thumbnailError) {
@@ -335,14 +342,14 @@ exports.updateProject = async (req, res) => {
         // Continue with project update even if thumbnail processing fails
       }
     }
-    
+
     let project;
-    
+
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
       // If it's a valid ObjectId, use findByIdAndUpdate
       project = await Project.findByIdAndUpdate(
-        id, 
-        updates, 
+        id,
+        updates,
         { new: true, runValidators: true }
       );
     } else {
@@ -353,121 +360,126 @@ exports.updateProject = async (req, res) => {
         { new: true, runValidators: true }
       );
     }
-    
+
     if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+      res.status(404).json({ message: 'Project not found' });
+      return;
     }
-    
+
     res.status(200).json(project);
   } catch (error) {
     console.error('Error updating project:', error);
-    res.status(400).json({ message: 'Failed to update project', error: error.message });
+    res.status(400).json({ message: 'Failed to update project', error: (error as Error).message });
   }
 };
 
 // Delete project
-exports.deleteProject = async (req, res) => {
+export const deleteProject = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    
+
     let project;
-    
+
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
       // If it's a valid ObjectId, use findByIdAndDelete
       project = await Project.findByIdAndDelete(id);
     } else {
       // For custom ID formats, use findOneAndDelete
-      project = await Project.findOneAndDelete({ 
-        $or: [{ _id: id }, { 'pages.id': id }] 
+      project = await Project.findOneAndDelete({
+        $or: [{ _id: id }, { 'pages.id': id }]
       });
     }
-    
+
     if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+      res.status(404).json({ message: 'Project not found' });
+      return;
     }
-    
+
     res.status(200).json({ message: 'Project deleted successfully' });
-    
+
   } catch (error) {
     console.error('Error deleting project:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };
 
 // Clone project
-exports.cloneProject = async (req, res) => {
+export const cloneProject = async (req: Request<{ id: string }, any, CloneProjectPayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
-    
+
     if (!userId) {
-      return res.status(400).json({ message: 'User ID is required for cloning' });
+      res.status(400).json({ message: 'User ID is required for cloning' });
+      return;
     }
-    
+
     const project = await Project.findById(id);
-    
+
     if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+      res.status(404).json({ message: 'Project not found' });
+      return;
     }
-    
+
     // Create a new project object without the _id field
     const projectData = project.toObject();
     delete projectData._id;
-    
+
     // Update fields for the cloned project
     projectData.userId = userId;
     projectData.title = `${projectData.title} (Copy)`;
     projectData.shared = false;
     projectData.starred = false;
     projectData.isTemplate = false; // Ensure cloned templates become regular projects
-    
+
     const newProject = new Project(projectData);
     const savedProject = await newProject.save();
-    
+
     res.status(201).json(savedProject);
   } catch (error) {
     console.error('Error cloning project:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };
 
 // Get all templates
-exports.getTemplates = async (req, res) => {
+export const getTemplates = async (req: Request, res: Response): Promise<void> => {
   try {
     const { category, type } = req.query;
-    
+
     // Build filter object based on query params
-    const filter = { isTemplate: true };
+    const filter: any = { isTemplate: true };
     if (category) filter.category = category;
     if (type) filter.type = type;
-    
+
     const templates = await Project.find(filter)
       .select('title type userId thumbnail category isTemplate createdAt updatedAt')
       .sort({ updatedAt: -1 });
-      
+
     res.status(200).json(templates);
   } catch (error) {
     console.error('Error fetching templates:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: (error as Error).message });
   }
 };
 
 // Convert project to template or vice versa
-exports.toggleTemplate = async (req, res) => {
+export const toggleTemplate = async (req: Request<{ id: string }, any, ToggleTemplatePayload>, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { isTemplate } = req.body;
-    
+
     if (isTemplate === undefined) {
-      return res.status(400).json({ message: 'isTemplate field is required' });
+      res.status(400).json({ message: 'isTemplate field is required' });
+      return;
     }
-    
+
     let project;
-    
+
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
       project = await Project.findByIdAndUpdate(
-        id, 
-        { isTemplate }, 
+        id,
+        { isTemplate },
         { new: true, runValidators: true }
       );
     } else {
@@ -477,14 +489,15 @@ exports.toggleTemplate = async (req, res) => {
         { new: true, runValidators: true }
       );
     }
-    
+
     if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+      res.status(404).json({ message: 'Project not found' });
+      return;
     }
-    
+
     res.status(200).json(project);
   } catch (error) {
     console.error('Error updating project template status:', error);
-    res.status(400).json({ message: 'Failed to update project', error: error.message });
+    res.status(400).json({ message: 'Failed to update project', error: (error as Error).message });
   }
 };
