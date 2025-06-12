@@ -125,7 +125,7 @@ export const getPaginatedProjects = async (req: Request, res: Response): Promise
     // Execute queries in parallel for better performance
     const [projects, totalProjects] = await Promise.all([
       Project.find(filter)
-        .select('title type userId thumbnail category starred shared isTemplate description createdAt updatedAt')
+        .select('title type userId thumbnail category starred shared isTemplate description designSpec createdAt updatedAt')
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limitNumber),
@@ -224,8 +224,9 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       userId,
       category,
       templateId,
-      dimensions
+      designSpec
     } = req.body;
+
 
     // Validate required fields
     if (!userId) {
@@ -253,10 +254,10 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     };
 
     // Use provided dimensions or default based on type
-    const pageDimensions: Dimensions = dimensions ? {
-      width: dimensions.width,
-      height: dimensions.height,
-      aspectRatio: dimensions.aspectRatio
+    const pageDimensions: Dimensions = designSpec?.dimensions ? {
+      width: designSpec.dimensions.width,
+      height: designSpec.dimensions.height,
+      aspectRatio: designSpec.dimensions.aspectRatio
     } : defaultPageDimensions;
 
     // Define the default background for the page
@@ -274,7 +275,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
         width: pageDimensions.width,
         height: pageDimensions.height
       };
-      
+
       thumbnailUrl = await generateCanvasPreviewThumbnail(
         legacyCanvasSize,
         defaultBackground,
@@ -288,7 +289,7 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
     }
 
     // Create the project data compatible with existing database structure
-    const projectData = {
+    const projectData: Omit<Project, '_id' | 'createdAt' | 'updatedAt'> = {
       title,
       description,
       type,
@@ -297,26 +298,29 @@ export const createProject = async (req: Request<{}, any, CreateProjectPayload>,
       starred: false,
       shared: false,
       isTemplate: false,
-      canvasSize: {
-        name: `${type} Canvas`,
-        width: pageDimensions.width,
-        height: pageDimensions.height
+      designSpec: {
+        mainType: type,
+        format: 'default', // Default format
+        dimensions: {
+          width: pageDimensions.width,
+          height: pageDimensions.height,
+          aspectRatio: pageDimensions.aspectRatio
+        }
       },
       thumbnail: thumbnailUrl,
       pages: [
         {
           id: pageId,
           name: 'Page 1',
-          canvasSize: {
-            name: `${type} Canvas`,
+          dimensions: {
             width: pageDimensions.width,
-            height: pageDimensions.height
+            height: pageDimensions.height,
+            aspectRatio: pageDimensions.aspectRatio
           },
           elements: [],
           background: defaultBackground
         }
       ],
-      metadata: templateId ? { templateId, createdFromTemplate: true } : {}
     };
 
     const newProject = new Project(projectData);
