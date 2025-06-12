@@ -24,15 +24,55 @@ import { Project } from '@canva-clone/shared-types/dist/design/models/project';
 import { Dimensions } from '@canva-clone/shared-types/dist/design/hierarchical';
 import { createPageId } from '@canva-clone/shared-types/dist/core/identifiers';
 
+// Import API types
+import type {
+  CreateProjectRequest,
+  GetProjectsRequest,
+  GetProjectRequest,
+  UpdateProjectRequest,
+  DeleteProjectRequest,
+  CloneProjectRequest,
+  ToggleTemplateRequest,
+  BulkProjectRequest
+} from '@canva-clone/shared-types/dist/api/requests/projects';
+
+import type {
+  CreateProjectResponse,
+  GetProjectsResponse,
+  GetProjectResponse,
+  UpdateProjectResponse,
+  DeleteProjectResponse,
+  CloneProjectResponse,
+  ToggleTemplateResponse,
+  BulkProjectResponse
+} from '@canva-clone/shared-types/dist/api/responses/projects';
+
+import type {
+  EnhancedAPIError,
+  EnhancedErrorResponse
+} from '@canva-clone/shared-types/dist/api';
+
+import {
+  ErrorFactory
+} from '@canva-clone/shared-types/dist/api';
+
+import type {
+  TypedRequest,
+  TypedResponse
+} from '@canva-clone/shared-types/dist/express';
+
 const unlinkAsync = promisify(fs.unlink);
 
 // Get all projects (with optional filtering)
-export const getProjects = async (req: Request, res: Response): Promise<void> => {
+export const getProjects = async (
+  req: TypedRequest<GetProjectsRequest>,
+  res: TypedResponse<{ success: true; data: Project[]; timestamp: string } | EnhancedErrorResponse>
+): Promise<void> => {
   try {
     const { userId, starred, category, type, isTemplate } = req.query;
 
     // Build filter object based on query params
-    const filter: any = {};
+    const filter: Record<string, any> = {};
     if (userId) filter.userId = userId;
     if (starred) filter.starred = starred === 'true';
     if (category) filter.category = category;
@@ -43,15 +83,27 @@ export const getProjects = async (req: Request, res: Response): Promise<void> =>
       .select('title type userId thumbnail category starred shared isTemplate createdAt updatedAt')
       .sort({ updatedAt: -1 });
 
-    res.status(200).json(projects);
+    res.status(200).json({
+      success: true,
+      data: projects,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    const apiError = ErrorFactory.internal('Failed to fetch projects', error);
+    res.status(500).json({
+      success: false,
+      error: apiError,
+      timestamp: new Date().toISOString()
+    });
   }
 };
 
 // Get projects with pagination
-export const getPaginatedProjects = async (req: Request, res: Response): Promise<void> => {
+export const getPaginatedProjects = async (
+  req: TypedRequest<GetProjectsRequest>,
+  res: TypedResponse<GetProjectsResponse | EnhancedErrorResponse>
+): Promise<void> => {
   try {
     const {
       page = '1',
@@ -71,7 +123,7 @@ export const getPaginatedProjects = async (req: Request, res: Response): Promise
     const skip = (pageNumber - 1) * limitNumber;
 
     // Build filter object based on query params
-    const filter: any = {};
+    const filter: Record<string, any> = {};
     if (userId) filter.userId = userId;
     if (starred) filter.starred = starred === 'true';
     if (shared) filter.shared = shared === 'true';
@@ -103,14 +155,26 @@ export const getPaginatedProjects = async (req: Request, res: Response): Promise
     const totalPages = Math.ceil(totalProjects / limitNumber);
 
     res.status(200).json({
-      projects,
-      totalProjects,
-      totalPages,
-      currentPage: pageNumber
+      success: true,
+      data: projects,
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        total: totalProjects,
+        totalPages,
+        hasNext: pageNumber < totalPages,
+        hasPrev: pageNumber > 1
+      },
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error fetching paginated projects:', error);
-    res.status(500).json({ message: 'Server error', error: (error as Error).message });
+    const apiError = ErrorFactory.internal('Failed to fetch projects', error);
+    res.status(500).json({
+      success: false,
+      error: apiError,
+      timestamp: new Date().toISOString()
+    });
   }
 };
 
