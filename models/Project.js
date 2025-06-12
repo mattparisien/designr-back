@@ -48,6 +48,29 @@ const PageSchema = new mongoose.Schema({
   }
 }, { _id: false }); // Don't generate MongoDB _id for nested pages
 
+// Design specification schema (nested object for hierarchical design types)
+const DesignSpecSchema = new mongoose.Schema({
+  mainType: {
+    type: String,
+    enum: ['social', 'presentation', 'print', 'custom'],
+    required: true
+  },
+  platform: {
+    type: String // e.g., 'instagram', 'facebook', 'widescreen', 'document'
+  },
+  format: {
+    type: String // e.g., 'post', 'story', 'standard', 'a4'
+  },
+  category: {
+    type: String // e.g., 'marketing', 'stationery' for print designs
+  },
+  dimensions: {
+    width: { type: Number, required: true },
+    height: { type: Number, required: true },
+    aspectRatio: { type: String, required: true }
+  }
+}, { _id: false });
+
 // Main project schema
 const ProjectSchema = new mongoose.Schema({
   title: {
@@ -72,7 +95,8 @@ const ProjectSchema = new mongoose.Schema({
     type: String
   },
   category: {
-    type: String
+    type: String,
+    enum: ['marketing', 'education', 'events', 'personal', 'other']
   },
   tags: [{
     type: String
@@ -93,11 +117,17 @@ const ProjectSchema = new mongoose.Schema({
     type: String
   }],
   pages: [PageSchema],
+  
+  // Legacy dimensions field for backward compatibility
   dimensions: {
-    width: { type: Number, required: true },
-    height: { type: Number, required: true },
-    aspectRatio: { type: String, required: true }
+    width: { type: Number },
+    height: { type: Number },
+    aspectRatio: { type: String }
   },
+  
+  // New hierarchical design specification (replaces simple dimensions)
+  designSpec: DesignSpecSchema,
+  
   metadata: {
     type: mongoose.Schema.Types.Mixed
   }

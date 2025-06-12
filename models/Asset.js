@@ -22,7 +22,7 @@ const AssetSchema = new Schema({
   },
   type: {
     type: String,
-    enum: ['image', 'video', 'audio', 'document', 'other'],
+    enum: ['image', 'video', 'audio', 'document', 'font', 'other'],
     required: true
   },
   mimeType: {
@@ -33,8 +33,12 @@ const AssetSchema = new Schema({
     type: Number, // size in bytes
     required: true
   },
+  size: {
+    type: Number // Legacy field for backward compatibility
+  },
   url: {
-    type: String // URL to the file in storage
+    type: String, // URL to the file in storage
+    required: true
   },
   cloudinaryId: {
     type: String // Cloudinary public_id for the asset
@@ -51,6 +55,18 @@ const AssetSchema = new Schema({
   thumbnailCloudinaryId: {
     type: String // Cloudinary public_id for the thumbnail
   },
+  
+  // Media-specific properties
+  width: {
+    type: Number // Image/video width
+  },
+  height: {
+    type: Number // Image/video height
+  },
+  duration: {
+    type: Number // Video/audio duration in seconds
+  },
+  
   isShared: {
     type: Boolean,
     default: false
