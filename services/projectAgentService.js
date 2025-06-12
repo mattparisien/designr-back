@@ -1,185 +1,170 @@
 // services/ProjectAgentService.js
 // ---------------------------------------------------------------------------
-// Project Assistant Agent Service — Modularized Edition (v5.0.0)
-// Orchestration only - all logic delegated to modular components
+// Project Assistant Agent Service — Modularized Edition (v5.1.0)
+// Orchestration only – all logic delegated to modular components.
+// Fully MCP‑compliant (messages built with helper wrappers).
 // ---------------------------------------------------------------------------
 
 require('dotenv').config();
+
+// Local modules -------------------------------------------------------------
 const { buildAgent } = require('../agent/index');
 const { requireDynamic } = require('../utils/dynamicImports');
 const vectorStore = require('./vectorStore');
 const imageAnalysis = require('./imageAnalysisService');
 
 /**
- * ProjectAgentService --------------------------------------------------------
- * Simplified orchestration façade - init(), chat(), getHealthStatus()
+ * ProjectAgentService
+ * A thin façade that initialises the shared agent once, then proxies
+ * chat requests (with or without history) to @openai/agents `run()`.
  */
 class ProjectAgentService {
+  // ---------------------------------------------------------------------
+  // Private fields -------------------------------------------------------
   #agent;
   #initialized = false;
   #vectorStore = vectorStore;
   #imageAnalysis = imageAnalysis;
 
+  // ---------------------------------------------------------------------
+  // Static defaults ------------------------------------------------------
   static MODEL = process.env.OPENAI_MODEL || 'gpt‑4o-mini';
-  static APP = process.env.APP_NAME || 'Canva Clone';
+  static APP   = process.env.APP_NAME     || 'Canva Clone';
 
-  async initialize() {
+  // ---------------------------------------------------------------------
+  // Bootstrapping --------------------------------------------------------
+  async initialize () {
     if (this.#initialized) return;
-    
+
     if (!process.env.OPENAI_API_KEY) {
-      console.warn('⚠️  OPENAI_API_KEY missing — agent disabled');
+      console.warn('⚠️  OPENAI_API_KEY missing — agent disabled');
       return;
     }
 
     try {
-      // Initialize dependent services in parallel
+      // 1️⃣ Initialise dependencies in parallel.
       await Promise.all([
-        this.#vectorStore.initialize(),
-        this.#imageAnalysis.initialize(),
+        this.#vectorStore.initialize?.(),
+        this.#imageAnalysis.initialize?.(),
       ]);
 
-      // Build the agent using the modular builder
+      // 2️⃣ Build the agent instance via the shared builder.
       this.#agent = await buildAgent({
-        vectorStore: this.#vectorStore,
-        imageAnalysis: this.#imageAnalysis,
+        vectorStore   : this.#vectorStore,
+        imageAnalysis : this.#imageAnalysis,
       });
 
       this.#initialized = true;
-      console.log('✅ Project Agent (Modular Edition) ready');
-    } catch (error) {
-      console.error('❌ Failed to initialize Project Agent:', error.message);
-      throw error;
+      console.log('✅ Project Agent ready (Modular Edition)');
+    } catch (err) {
+      console.error('❌ Failed to initialise Project Agent:', err.message);
+      throw err;
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Public helpers -------------------------------------------------------
   /**
-   * Top‑level helper to chat with the agent.
-   * Returns { assistant_text, toolOutputs, traceId }.
+   * Send a single‑turn chat request (no prior history).
+   * @returns {Promise<{assistant_text:string, toolOutputs:Object, traceId?:string}>}
    */
-  async chat(userText, { userId } = {}) {
+  async chat (userText, { userId } = {}) {
     if (!this.#initialized) await this.initialize();
-    
     if (!this.#agent) {
-      // Fallback when API key missing
-      return {
-        assistant_text:
-          "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!",
-      };
+      return { assistant_text : "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!" };
     }
 
     try {
-      const { run, RunToolCallOutputItem } = await requireDynamic();
-      
-      // Pass userId in the messages as system context
+      const { run, user: u, system: s, RunToolCallOutputItem } = await requireDynamic();
+
       const messages = [
-        { role: 'system', content: `User ID for this session: ${userId || 'anonymous'}` },
-        { role: 'user', content: userText }
+        s(`User ID for this session: ${userId || 'anonymous'}`),
+        u(userText),
       ];
-      
+
       const result = await run(this.#agent, messages, { userId });
+      const toolOutputs = this.#extractToolOutputs(result.newItems, RunToolCallOutputItem);
 
-      const toolOutputs = result.newItems
-        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
-        .reduce((acc, i) => {
-          acc[i.rawItem.name] = i.output;
-          return acc;
-        }, {});
-
-      console.log('Completed tool calls:', result.newItems
-        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
-        .map(i => i.rawItem.name));
-
-      return {
-        assistant_text: result.finalOutput,
-        toolOutputs, // key‑value map of toolName → return value
-        traceId: result.traceId, // useful for debugging with the tracing UI
-      };
-    } catch (error) {
-      console.error('❌ Chat error:', error.message);
-      return {
-        assistant_text: "I encountered an error while processing your request. Please try again.",
-        error: error.message,
-      };
+      return { assistant_text: result.finalOutput, toolOutputs, traceId: result.traceId };
+    } catch (err) {
+      console.error('❌ Chat error:', err.message);
+      return { assistant_text: 'I encountered an error while processing your request. Please try again.', error: err.message };
     }
   }
 
   /**
-   * Chat with the agent using conversation history.
-   * Returns { assistant_text, toolOutputs, traceId }.
+   * Chat with conversation history. Adds memory in a token‑efficient way.
+   * @param {string} userText
+   * @param {Array<{role:string,content:string}>} conversationHistory
    */
-  async chatWithHistory(userText, conversationHistory = [], { userId } = {}) {
+  async chatWithHistory (userText, conversationHistory = [], { userId } = {}) {
     if (!this.#initialized) await this.initialize();
-    
     if (!this.#agent) {
-      // Fallback when API key missing
-      return {
-        assistant_text:
-          "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!",
-      };
+      return { assistant_text : "I can't connect to the model right now, but I can still help you explore templates or colour palettes locally!" };
     }
 
     try {
-      const { run, RunToolCallOutputItem } = await requireDynamic();
-      
-      // Build context as a single message with conversation history embedded
-      let contextualMessage = userText;
-      
-      if (conversationHistory.length > 0) {
-        // Filter out system messages and format conversation history
-        const recentHistory = conversationHistory
-          .filter(msg => msg.role !== 'system')
-          .slice(-8) // Keep last 8 messages for context
-          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n');
-        
-        contextualMessage = `Previous conversation:
-${recentHistory}
+      const {
+        run,
+        user      : u,
+        assistant : a,
+        system    : s,
+        RunToolCallOutputItem,
+      } = await requireDynamic();
 
-Current user message: ${userText}
+      // 1️⃣ Base system context.
+      const messages = [
+        s(`You are a helpful design assistant for a Canva‑like platform. Help users create projects, find templates, and work with design elements. You have access to tools for creating projects, searching assets, and analysing images. User ID for this session: ${userId || 'anonymous'}. Maintain context from previous messages in this conversation.`),
+      ];
 
-Please respond considering the conversation context above and maintain continuity.`;
+      // 2️⃣ Re‑wrap recent history as MCP items (drop system messages to avoid duplicates).
+      const recentHistory = conversationHistory
+        .filter(m => m.role !== 'system')
+        .slice(-10);
+
+      for (const m of recentHistory) {
+        if (m.role === 'user')        messages.push(u(m.content));
+        else if (m.role === 'assistant') messages.push(a(m.content));
+        else                           messages.push(s(m.content));
       }
 
-      console.log(`💬 Processing chat with conversation history (${conversationHistory.length} total messages, using contextual prompt)`);
+      // 3️⃣ Current turn.
+      messages.push(u(userText));
 
-      // Use single message approach that's more compatible with the SDK
-      const result = await run(this.#agent, contextualMessage, { userId });
+      console.log(`💬 Processing chat with history (${conversationHistory.length} total, ${recentHistory.length} in context)`);
 
-      const toolOutputs = result.newItems
-        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
-        .reduce((acc, i) => {
-          acc[i.rawItem.name] = i.output;
-          return acc;
-        }, {});
+      const result      = await run(this.#agent, messages, { userId });
+      const toolOutputs = this.#extractToolOutputs(result.newItems, RunToolCallOutputItem);
 
-      console.log('Completed tool calls:', result.newItems
-        .filter((i) => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
-        .map(i => i.rawItem.name));
-
-      return {
-        assistant_text: result.finalOutput,
-        toolOutputs, // key‑value map of toolName → return value
-        traceId: result.traceId, // useful for debugging with the tracing UI
-      };
-    } catch (error) {
-      console.error('❌ Chat with history error:', error.message);
-      return {
-        assistant_text: "I encountered an error while processing your request. Please try again.",
-        error: error.message,
-      };
+      return { assistant_text: result.finalOutput, toolOutputs, traceId: result.traceId };
+    } catch (err) {
+      console.error('❌ ChatWithHistory error:', err.message);
+      return { assistant_text: 'I encountered an error while processing your request. Please try again.', error: err.message };
     }
   }
 
   /** Simple health endpoint for monitoring. */
-  getHealthStatus() {
+  getHealthStatus () {
     return {
-      initialized: this.#initialized,
-      model: ProjectAgentService.MODEL,
-      app: ProjectAgentService.APP,
-      tools: this.#agent?.tools?.map((t) => t.name) ?? [],
-      vectorStoreReady: this.#vectorStore ? true : false,
-      imageAnalysisReady: this.#imageAnalysis ? true : false,
+      initialized       : this.#initialized,
+      model             : ProjectAgentService.MODEL,
+      app               : ProjectAgentService.APP,
+      tools             : this.#agent?.tools?.map(t => t.name) ?? [],
+      vectorStoreReady  : !!this.#vectorStore,
+      imageAnalysisReady: !!this.#imageAnalysis,
     };
+  }
+
+  // ---------------------------------------------------------------------
+  // Private utilities ----------------------------------------------------
+  /** Extracts completed tool outputs from `result.newItems`. */
+  #extractToolOutputs (items = [], RunToolCallOutputItem) {
+    return items
+      .filter(i => i instanceof RunToolCallOutputItem && i.rawItem.status === 'completed')
+      .reduce((acc, i) => {
+        acc[i.rawItem.name] = i.output;
+        return acc;
+      }, {});
   }
 }
 
