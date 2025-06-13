@@ -14,7 +14,7 @@ const { createProjectFocusedTopicsGuardrail } = require('./guardrails/projectTop
 
 async function buildAgent({ vectorStore, imageAnalysis }) {
   const { Agent, webSearchTool } = await requireDynamic();
-  
+
   const MODEL = process.env.OPENAI_MODEL || 'gpt‑4o-mini';
   const APP = process.env.APP_NAME || 'Canva Clone';
 
@@ -25,8 +25,10 @@ async function buildAgent({ vectorStore, imageAnalysis }) {
     await createSearchAssetsTool(vectorStore),
     await createSearchDocsTool(vectorStore),
     await createAnalyzeImageTool(imageAnalysis),
-    webSearchTool(),
-    await createPresentationTool(),
+    webSearchTool({
+      userLocation: { type: 'approximate', city: 'New York' },
+    }),
+     await createPresentationTool(),
     await createSocialMediaTool(),
     await createPrintTool(),
     await createCustomProjectTool(),

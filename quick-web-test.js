@@ -14,7 +14,7 @@ async function quickTest() {
     console.log('🔧 Health status:', JSON.stringify(health, null, 2));
     
     // Prompt that should trigger web search AND create a social media post
-    const prompt = "Create an Instagram post about the top 5 current trends in hedge funds for 2025. Please search for the most recent information about hedge fund trends and then create an engaging social media post with that information.";
+    const prompt = "Search online for the 5 key hedge fund trends in 2025, then create an Instagram post about these trends. Make sure the post is engaging and includes current information from your search.";
     console.log('📝 Testing with prompt:', prompt);
     
     const startTime = Date.now();

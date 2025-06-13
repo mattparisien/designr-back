@@ -84,6 +84,7 @@ class ProjectAgentService {
       ];
 
       const result = await run(this.#agent, messages, { userId });
+      console.log('final output', result.finalOutput);
       const toolOutputs = this.#extractToolOutputs(result.newItems, RunToolCallOutputItem);
 
       return { assistant_text: result.finalOutput, toolOutputs, traceId: result.traceId };
@@ -92,11 +93,11 @@ class ProjectAgentService {
       if (err.message && err.message.includes('Unsupported built-in tool call type')) {
         console.log('🔍 Debug - Handling hosted tool call error...');
         
-        // Try to extract the tool call info from the error message
-        const toolCallMatch = err.message.match(/\{"type":"hosted_tool_call"[^}]+\}/);
+        // Try to extract the tool call info from the error message - improved regex
+        const toolCallMatch = err.message.match(/\{"type":"hosted_tool_call".*?\}(?=\s*$)/);
         if (toolCallMatch) {
           try {
-            console.log('the tool catch matcch', toolCallMatch);
+            console.log('🔍 Debug - Tool call match:', toolCallMatch[0]);
             const toolCall = JSON.parse(toolCallMatch[0]);
             console.log('🔍 Debug - Extracted hosted tool call:', toolCall);
             
@@ -118,7 +119,7 @@ class ProjectAgentService {
               note: 'Hosted tool call processed successfully despite integration issue'
             };
           } catch (parseErr) {
-            console.log('the parse err', parseErr);
+            console.log('🔍 Debug - Parse error:', parseErr.message);
             console.log('🔍 Debug - Could not parse hosted tool call info');
           }
         }
@@ -179,7 +180,7 @@ class ProjectAgentService {
       if (err.message && err.message.includes('Unsupported built-in tool call type')) {
         console.log('🔍 Debug - Handling hosted tool call error in chat with history...');
         
-        const toolCallMatch = err.message.match(/\{"type":"hosted_tool_call"[^}]+\}/);
+        const toolCallMatch = err.message.match(/\{"type":"hosted_tool_call".*?\}(?=\s*$)/);
         if (toolCallMatch) {
           try {
             const toolCall = JSON.parse(toolCallMatch[0]);
