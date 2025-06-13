@@ -1,0 +1,32 @@
+{
+  "testEnvironment": "node",
+  "extensionsToTreatAsEsm": [".js"],
+  "globals": {
+    "__esModule": true
+  },
+  "transform": {},
+  "setupFilesAfterEnv": ["<rootDir>/tests/agent/setup.js"],
+  "testPathIgnorePatterns": [
+    "/node_modules/",
+    "/dist/"
+  ],
+  "collectCoverageFrom": [
+    "agent/**/*.js",
+    "services/projectAgentService.js",
+    "!**/node_modules/**",
+    "!**/dist/**"
+  ],
+  "coverageDirectory": "coverage",
+  "coverageReporters": [
+    "text",
+    "html",
+    "lcov"
+  ],
+  "testTimeout": 30000,
+  "clearMocks": true,
+  "resetMocks": true,
+  "restoreMocks": true,
+  "moduleNameMapping": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  }
+}

@@ -5,7 +5,8 @@ const FORBIDDEN_TOPICS = require('../config/forbiddenTopics');
 
 function createProjectFocusedTopicsGuardrail() {
   return {
-    name: 'project‑focused‑topics',
+    name: 'project_focused_topics',
+    description: 'Keeps conversations focused on design and project topics',
     async check({ content }) {
       const lower = content.toLowerCase();
       const hit = FORBIDDEN_TOPICS.some((topic) => lower.includes(topic));
@@ -19,6 +20,24 @@ function createProjectFocusedTopicsGuardrail() {
       }
       
       return { success: true };
+    },
+    async execute({ query }) {
+      const lower = query.toLowerCase();
+      const hit = FORBIDDEN_TOPICS.some((topic) => lower.includes(topic));
+      
+      if (hit) {
+        return {
+          allowed: false,
+          reason: 'Non-project related query detected',
+          message:
+            "I'm a Project Assistant focused on helping you create amazing designs and manage your projects. Let's talk about your creative projects instead! What would you like to create today?",
+        };
+      }
+      
+      return { 
+        allowed: true,
+        reason: 'Query is project-related'
+      };
     },
   };
 }
