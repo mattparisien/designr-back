@@ -96,7 +96,6 @@ class ProjectAgentService {
         const toolCallMatch = err.message.match(/\{"type":"hosted_tool_call"[^}]+\}/);
         if (toolCallMatch) {
           try {
-            console.log('the tool catch matcch', toolCallMatch);
             const toolCall = JSON.parse(toolCallMatch[0]);
             console.log('🔍 Debug - Extracted hosted tool call:', toolCall);
             
@@ -118,7 +117,6 @@ class ProjectAgentService {
               note: 'Hosted tool call processed successfully despite integration issue'
             };
           } catch (parseErr) {
-            console.log('the parse err', parseErr);
             console.log('🔍 Debug - Could not parse hosted tool call info');
           }
         }

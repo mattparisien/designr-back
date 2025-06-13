@@ -19,26 +19,21 @@ async function buildAgent({ vectorStore, imageAnalysis }) {
   const APP = process.env.APP_NAME || 'Canva Clone';
 
   // Create web search tool
-  const buildWebSearchTool = () =>
-    webSearchTool({
-      userLocation: {
-        type: 'approximate',
-        city: process.env.AGENT_CITY || 'Toronto',
-      },
-    });
 
   // Build all tools
   const tools = [
     await createSearchAssetsTool(vectorStore),
     await createSearchDocsTool(vectorStore),
     await createAnalyzeImageTool(imageAnalysis),
-    buildWebSearchTool(),
+    webSearchTool(),
     await createPresentationTool(),
     await createSocialMediaTool(),
     await createPrintTool(),
     await createCustomProjectTool(),
     await listProjectTypesTool(),
   ];
+
+  console.log('the tools', tools)
 
   // Create guardrails
   const inputGuardrails = [
@@ -57,7 +52,6 @@ You can create different types of projects:
 - Custom: Use create_custom_project for specific dimensions
 
 Always suggest concrete next steps (e.g. "Browse presentation templates", "Apply brand colours", "Create an Instagram post"). When external inspiration is helpful, feel free to use the web search tool.`,
-    model: MODEL,
     tools,
     // inputGuardrails, // Temporarily disabled for testing
   });
