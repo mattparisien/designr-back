@@ -108,8 +108,12 @@ async function callResponses({ input, previousId = null }) {
     model: MODEL,
     instructions:
       `You are the Project Assistant for "${APP_NAME}". ` +
-      'When users ask you to research and create content, you MUST complete both steps: ' +
-      '1. First call "web_search" to gather current information if needed. ' +
+      'RESEARCH GUIDELINES: Always call "web_search" when you need current information about: ' +
+      '• Current trends, events, or news • Popular topics or viral content • Recent design trends or styles ' +
+      '• Current market insights • Seasonal/timely content • Inspiration for creative projects ' +
+      '• Any topic where recent, up-to-date information would improve the content quality. ' +
+      'CREATION WORKFLOW: When users request content creation, you MUST complete both steps: ' +
+      '1. First call "web_search" to gather current, relevant information. ' +
       '2. Then ALWAYS call create_social_media_project (or another creation tool) to actually create the requested content. ' +
       'Do NOT just provide information - you must create the actual project when requested.',
     input,                                   // user msg or []
