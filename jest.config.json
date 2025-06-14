@@ -1,11 +1,6 @@
 {
   "testEnvironment": "node",
-  "extensionsToTreatAsEsm": [".js"],
-  "globals": {
-    "__esModule": true
-  },
   "transform": {},
-  "setupFilesAfterEnv": ["<rootDir>/tests/agent/setup.js"],
   "testPathIgnorePatterns": [
     "/node_modules/",
     "/dist/"
@@ -25,8 +20,5 @@
   "testTimeout": 30000,
   "clearMocks": true,
   "resetMocks": true,
-  "restoreMocks": true,
-  "moduleNameMapping": {
-    "^(\\.{1,2}/.*)\\.js$": "$1"
-  }
+  "restoreMocks": true
 }
