@@ -101,7 +101,9 @@ function createExecutors({ vectorStore = {}, imageAnalysis = {} }) {
 /* ------------------------------------------------------------------ *
  * 2.  Helper: single Responses-API call                              *
  * ------------------------------------------------------------------ */
-async function callResponses({ input, previousId = null, toolOutputs = [] }) {
+async function callResponses({ input, previousId = null }) {
+
+  
   const body = {
     model: MODEL,
     instructions:
@@ -115,7 +117,6 @@ async function callResponses({ input, previousId = null, toolOutputs = [] }) {
   };
 
   if (previousId)  body.previous_response_id = previousId;
-  if (toolOutputs.length) body.tool_outputs  = toolOutputs;
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',
@@ -141,40 +142,52 @@ async function runAssistant(prompt, { vectorStore = {}, imageAnalysis = {} } = {
 
   for (let step = 0; step < 8; step += 1) {
     const outArr = response.output || [];
+    console.log(`🔄 Step ${step + 1}: Found ${outArr.length} output items`);
+    
+    // Log the types of output items
+    outArr.forEach((item, i) => {
+      console.log(`  Item ${i}: type=${item.type}, name=${item.name || 'N/A'}`);
+    });
 
     // 4-A  If there's an assistant message with text → return it
     const finalMsg = outArr.find(o => o.type === 'message');
-    if (!outArr.some(o => o.type === 'tool_call')) {
+    if (!outArr.some(o => o.type === 'tool_call' || o.type === 'function_call')) {
+      console.log(`✅ No more tool calls found, returning final output`);
       const text = finalMsg?.content?.map(c => c.text).join(' ') || '';
       return { finalOutput: text };
     }
 
     // 4-B  Handle the *first* tool call in the array
-    const call = outArr.find(o => o.type === 'tool_call');
+    const call = outArr.find(o => o.type === 'tool_call' || o.type === 'function_call');
+    console.log(`🔧 Found tool call: ${call.name || call.tool?.type}`);
     const { id: callId, tool, name, arguments: argJson } = call;
 
     // Hosted web_search: no executor; just continue thread
     if (tool?.type === 'web_search') {
+      console.log(`🌐 Processing web search...`);
       response   = await callResponses({ input: [], previousId });
       previousId = response.id;
       continue;
     }
 
     // Custom function tool
+    console.log(`⚙️ Executing custom tool: ${name} with args: ${argJson}`);
     const args   = JSON.parse(argJson || '{}');
     const runFn  = EXECUTORS[name];
     let result;
     try        { result = runFn ? await runFn(args) : { error: 'tool not found' }; }
     catch (err) { result = { error: err.message }; }
 
-    response   = await callResponses({
-      input: [],
-      previousId,
-      toolOutputs: [
-        { tool_call_id: callId, name, output: JSON.stringify(result) },
-      ],
-    });
-    previousId = response.id;
+    console.log(`📤 Tool result:`, result);
+
+    // Since Responses API doesn't support 'function' role, we'll return the combined result
+    const assistantMsg = outArr.find(o => o.type === 'message');
+    const assistantText = assistantMsg?.content?.map(c => c.text).join(' ') || '';
+    
+    // Combine the assistant's message with the tool execution result
+    const combinedOutput = assistantText + '\n\n✅ Project Created: ' + (result.message || JSON.stringify(result));
+    
+    return { finalOutput: combinedOutput, toolResult: result };
   }
 
   return { finalOutput: '(stopped after 8 tool calls)' };

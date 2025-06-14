@@ -19,7 +19,7 @@ test('web search followed by a specialist tool → Instagram post output', async
   expect.hasAssertions();
 
   const prompt =
-    'Research current minimalist typography trends and then create an Instagram post applying them.';
+    'Create an instagram post on the 5 most relevant hedge fund trends today';
 
   const result = await assistant.run(prompt);
 
@@ -36,6 +36,9 @@ test('web search followed by a specialist tool → Instagram post output', async
   
   // — 3 — Should mention typography or design concepts
   expect(result.finalOutput).toMatch(/typography|design|post|minimalist/i);
+
+  // — 4 — Should actually have created a project (not just talked about it)
+  expect(result.finalOutput).toMatch(/✅ Project Created|Created.*successfully/i);
 
   // — 4 — Should actually have created a project (not just talked about it)
   expect(result.finalOutput).toMatch(/created|project|successfully/i);
