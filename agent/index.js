@@ -191,7 +191,11 @@ async function runAssistant(prompt, { vectorStore = {}, imageAnalysis = {} } = {
     // Combine the assistant's message with the tool execution result
     const combinedOutput = assistantText + '\n\n✅ Project Created: ' + (result.message || JSON.stringify(result));
     
-    return { finalOutput: combinedOutput, toolResult: result };
+    return { 
+      finalOutput: combinedOutput, 
+      toolResult: result,
+      toolCalls: [{ name, args, result }] // Track tool calls for testing
+    };
   }
 
   return { finalOutput: '(stopped after 8 tool calls)' };
