@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 // Schema for color palettes
@@ -111,6 +111,7 @@ const BrandSchema = new Schema({
         trim: true
     },
     colorPalettes: [ColorPaletteSchema],
+    typography: [TypographySchema],
     logos: [LogoSchema],
     brandVoice: BrandVoiceSchema,
     images: [{
@@ -151,4 +152,4 @@ BrandSchema.index({ userId: 1 });
 // Index for searches by name
 BrandSchema.index({ name: 'text' });
 
-module.exports = mongoose.model('Brand', BrandSchema);
+export default mongoose.model('Brand', BrandSchema);

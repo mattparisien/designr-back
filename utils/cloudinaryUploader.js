@@ -1,6 +1,6 @@
-const cloudinary = require('../config/cloudinary');
-const fs = require('fs');
-const { promisify } = require('util');
+import cloudinary from '../config/cloudinary.js';
+import fs from 'fs';
+import { promisify } from 'util';
 const unlinkAsync = promisify(fs.unlink);
 
 /**
@@ -79,7 +79,7 @@ const createCloudinaryThumbnail = async (publicId, options = {}) => {
   }
 };
 
-module.exports = {
+export {
   uploadToCloudinary,
   deleteFromCloudinary,
   createCloudinaryThumbnail

@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import folderController from '../controllers/folderController.js';
+
 const router = express.Router();
-const folderController = require('../controllers/folderController');
 
 // GET all folders (with optional filtering)
 router.get('/', folderController.getFolders);
@@ -26,4 +27,4 @@ router.delete('/:id', folderController.deleteFolder);
 // PATCH move folder to a new parent
 router.patch('/:id/move', folderController.moveFolder);
 
-module.exports = router;
+export default router;

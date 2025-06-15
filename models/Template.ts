@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from "mongoose";
 
 // Define the schema for individual elements in a template
 const ElementSchema = new mongoose.Schema({

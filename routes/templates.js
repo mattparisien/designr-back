@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import * as templateController from '../dist/controllers/template.controller.js';
+
 const router = express.Router();
-const templateController = require('../dist/controllers/template.controller');
 
 // GET all templates (with optional filtering)
 router.get('/', templateController.getTemplates);
@@ -32,4 +33,4 @@ router.put('/:id', templateController.updateTemplate);
 // DELETE template
 router.delete('/:id', templateController.deleteTemplate);
 
-module.exports = router;
+export default router;

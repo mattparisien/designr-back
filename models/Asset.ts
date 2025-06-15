@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 const AssetSchema = new Schema({
@@ -100,4 +100,4 @@ AssetSchema.index({ type: 1 });
 // Index for text search
 AssetSchema.index({ name: 'text', tags: 'text' });
 
-module.exports = mongoose.model('Asset', AssetSchema);
+export default mongoose.model('Asset', AssetSchema);

@@ -3,39 +3,36 @@ import asyncHandler from 'express-async-handler';
 
 // Extend Request interface to include userId
 declare global {
-  namespace Express {
-    interface Request {
-      userId?: string;
+    namespace Express {
+        interface Request {
+            userId?: string;
+        }
     }
-  }
 }
 
-// Import JavaScript modules using require
-const Brand = require('../models/Brand');
-const Asset = require('../models/Asset');
-const User = require('../models/User');
-const mongoose = require('mongoose');
-const { ObjectId } = require('mongoose').Types;
-const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
-const { OpenAI } = require('openai');
-const { path } = require("path");
-const fs = require('fs');
+// Import JavaScript modules using require (since they're CommonJS modules)
+import mongoose from 'mongoose';
+import { OpenAI } from 'openai';
+import Brand from '../models/Brand.js';
+import Asset from '../models/Asset.js';
+import User from '../models/User.js';
+const { ObjectId } = mongoose.Types;
+
+// Import JavaScript modules with type annotations
+const { uploadToCloudinary } = require('../utils/cloudinaryUploader') as { uploadToCloudinary: any };
 
 // Import shared types
 import type {
-  BrandId,
-  UserId,
-  AssetId,
-  CreateBrandPayload,
-  UpdateBrandPayload,
-  GenerateBrandFromAssetsPayload,
-  ShareBrandPayload,
-  UpdateBrandWithAssetPayload,
-  BrandSuccessResponse,
-  DeleteBrandResponse,
-  GenerateBrandFromAssetsResponse,
-  ShareBrandResponse,
-  UpdateBrandWithAssetResponse
+    BrandId,
+    CreateBrandPayload,
+    DeleteBrandResponse,
+    GenerateBrandFromAssetsPayload,
+    GenerateBrandFromAssetsResponse,
+    ShareBrandPayload,
+    ShareBrandResponse,
+    UpdateBrandPayload,
+    UpdateBrandWithAssetPayload,
+    UpdateBrandWithAssetResponse
 } from '@canva-clone/shared-types';
 
 // Initialize OpenAI client
@@ -105,11 +102,11 @@ export const updateBrand = asyncHandler(async (req: Request<{ id: string }, {}, 
     if (description) brand.description = description;
     if (tagline) brand.tagline = tagline;
     if (industry) brand.industry = industry;
-    if (colorPalettes) brand.colorPalettes = colorPalettes;
-    if (typography) brand.typography = typography;
-    if (logos) brand.logos = logos;
+    if (colorPalettes) (brand as any).colorPalettes = colorPalettes;
+    if (typography) (brand as any).typography = typography;
+    if (logos) (brand as any).logos = logos;
     if (brandVoice) brand.brandVoice = brandVoice;
-    if (images) brand.images = images;
+    if (images) (brand as any).images = images;
     if (guidelines) brand.guidelines = guidelines;
     if (typeof isActive === 'boolean') brand.isActive = isActive;
 
@@ -127,13 +124,13 @@ export const deleteBrand = asyncHandler(async (req: Request<{ id: string }>, res
         res.status(404).json({ success: false, message: 'Brand not found or access denied' });
         return;
     }
-    
+
     const response: DeleteBrandResponse = {
         success: true,
         id: req.params.id as BrandId,
         deleted: true
     };
-    
+
     res.status(200).json(response);
 });
 
@@ -179,7 +176,7 @@ export const generateBrandFromAssets = asyncHandler(async (req: Request<{}, {}, 
 
     const response: GenerateBrandFromAssetsResponse = {
         success: true,
-        brand: brand,
+        brand: brand.toObject() as any,
         generationMethod: 'ai',
         assetsAnalyzed: assets.length
     };
@@ -221,20 +218,20 @@ export const updateBrandWithAsset = asyncHandler(async (req: Request<{ id: strin
 
     // Update brand with new data - merge the analyzed data
     if (updatedData.colorPalettes) {
-        brand.colorPalettes = [...brand.colorPalettes, ...updatedData.colorPalettes];
+        (brand as any).colorPalettes = [...(brand as any).colorPalettes, ...updatedData.colorPalettes];
     }
     if (updatedData.typography) {
-        brand.typography = [...brand.typography, ...updatedData.typography];
+        (brand as any).typography = [...(brand as any).typography, ...updatedData.typography];
     }
     if (updatedData.brandVoice) {
         brand.brandVoice = { ...brand.brandVoice, ...updatedData.brandVoice };
     }
-    
+
     await brand.save();
 
     const response: UpdateBrandWithAssetResponse = {
         success: true,
-        brand: brand,
+        brand: brand.toObject() as any,
         assetAdded: assetId
     };
 
@@ -277,13 +274,13 @@ export const shareBrand = asyncHandler(async (req: Request<{ id: string }, {}, S
     brand.shared = true;
 
     await brand.save();
-    
+
     const response: ShareBrandResponse = {
         success: true,
-        brand: brand,
+        brand: brand.toObject() as any,
         sharedWithUsers: userIds
     };
-    
+
     res.status(200).json(response);
 });
 
@@ -298,14 +295,16 @@ async function analyzeAssetsWithAI(assets: any[], brandName: string): Promise<an
     }));
 
     const assetInputs = assets.map((a: any) => ({
-        type: "input_image",
-        image_url: a.url || a.cloudinaryUrl
+        type: "image_url",
+        image_url: {
+            url: a.url || a.cloudinaryUrl
+        }
     }));
 
     // Create files for OpenAI from assets (handle multiple files)
     // const uploadedFiles = [];
 
-        const brandSchema = {
+    const brandSchema = {
         type: "object",
         additionalProperties: false,            // 👈 root
         properties: {
@@ -365,9 +364,12 @@ async function analyzeAssetsWithAI(assets: any[], brandName: string): Promise<an
                 {
                     role: "user",
                     content: [
-                        { type: "text", text: `Extract a brand identity from the following images. Please use the following json schema to answer: ${JSON.stringify(brandSchema)}` },
+                        {
+                            type: "text",
+                            text: `Extract a brand identity from the following images. Please use the following json schema to answer: ${JSON.stringify(brandSchema)}`
+                        },
                         ...assetInputs
-                    ],
+                    ] as any,
                 }
             ],
             response_format: {
@@ -383,7 +385,7 @@ async function analyzeAssetsWithAI(assets: any[], brandName: string): Promise<an
         if (responseText) {
             return JSON.parse(responseText);
         }
-        
+
         throw new Error("No response from OpenAI");
 
     } catch (err) {

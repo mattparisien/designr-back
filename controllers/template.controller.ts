@@ -13,12 +13,20 @@ import type {
   TemplateId,
   UpdateTemplatePayload,
   UseTemplatePayload,
-  UseTemplateResponse
+  UseTemplateResponse,
+  FeaturedTemplatesResponse,
+  PopularTemplatesResponse,
+  CategoryTemplatesResponse,
+  TemplateResponse,
+  TemplateListResponse,
+  TemplateSuccessResponse,
+  CreateTemplateResponse,
+  UpdateTemplateResponse
 } from '@canva-clone/shared-types';
 
 // Get all templates with optional filtering
 export const getTemplates = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { category, type, featured, popular, tags } = req.query;
+  const { category, type, featured, popular, tags, page = 1, pageSize = 20 } = req.query;
 
   // Build filter object based on query params
   const filter: any = {};
@@ -31,11 +39,27 @@ export const getTemplates = asyncHandler(async (req: Request, res: Response): Pr
     filter.tags = { $in: tagList };
   }
 
-  const templates = await Template.find(filter)
-    .select('title type category thumbnail previewImages tags featured popular dimensions createdAt updatedAt')
-    .sort({ updatedAt: -1 });
+  const pageNum = parseInt(page as string, 10);
+  const pageSizeNum = parseInt(pageSize as string, 10);
+  const skip = (pageNum - 1) * pageSizeNum;
 
-  res.status(200).json(templates);
+  const [templates, total] = await Promise.all([
+    Template.find(filter)
+      .select('title type category thumbnail previewImages tags featured popular dimensions createdAt updatedAt')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(pageSizeNum),
+    Template.countDocuments(filter)
+  ]);
+
+  const response: TemplateListResponse = {
+    templates,
+    total,
+    page: pageNum,
+    pageSize: pageSizeNum
+  };
+
+  res.status(200).json(response);
 });
 
 // Get template by ID
@@ -48,7 +72,12 @@ export const getTemplateById = asyncHandler(async (req: Request<{ id: string }>,
     return;
   }
 
-  res.status(200).json(template);
+  const response: TemplateResponse = {
+    template,
+    etag: template.updatedAt.toISOString()
+  };
+
+  res.status(200).json(response);
 });
 
 // Create new template
@@ -69,7 +98,13 @@ export const createTemplate = asyncHandler(async (req: Request<{}, {}, CreateTem
   const newTemplate = new Template(templateData);
   const savedTemplate = await newTemplate.save();
 
-  res.status(201).json(savedTemplate);
+  const response: CreateTemplateResponse = {
+    success: true,
+    template: savedTemplate,
+    id: savedTemplate._id as TemplateId
+  };
+
+  res.status(201).json(response);
 });
 
 // Update template
@@ -88,7 +123,13 @@ export const updateTemplate = asyncHandler(async (req: Request<{ id: string }, {
     return;
   }
 
-  res.status(200).json(template);
+  const response: UpdateTemplateResponse = {
+    success: true,
+    template,
+    etag: template.updatedAt.toISOString()
+  };
+
+  res.status(200).json(response);
 });
 
 // Delete template
@@ -197,7 +238,13 @@ export const createTemplateFromProject = asyncHandler(async (req: Request<{ proj
   const newTemplate = new Template(templateData);
   const savedTemplate = await newTemplate.save();
 
-  res.status(201).json(savedTemplate);
+  const response: CreateTemplateResponse = {
+    success: true,
+    template: savedTemplate,
+    id: savedTemplate._id as TemplateId
+  };
+
+  res.status(201).json(response);
 });
 
 // Get featured templates
@@ -207,7 +254,12 @@ export const getFeaturedTemplates = asyncHandler(async (req: Request, res: Respo
     .sort({ updatedAt: -1 })
     .limit(10);
 
-  res.status(200).json(templates);
+  const response: FeaturedTemplatesResponse = {
+    templates,
+    total: templates.length
+  };
+
+  res.status(200).json(response);
 });
 
 // Get popular templates
@@ -217,7 +269,12 @@ export const getPopularTemplates = asyncHandler(async (req: Request, res: Respon
     .sort({ updatedAt: -1 })
     .limit(10);
 
-  res.status(200).json(templates);
+  const response: PopularTemplatesResponse = {
+    templates,
+    total: templates.length
+  };
+
+  res.status(200).json(response);
 });
 
 // Get templates by category
@@ -228,5 +285,11 @@ export const getTemplatesByCategory = asyncHandler(async (req: Request<{ categor
     .select('title type category thumbnail previewImages tags featured popular dimensions createdAt updatedAt')
     .sort({ updatedAt: -1 });
 
-  res.status(200).json(templates);
+  const response: CategoryTemplatesResponse = {
+    templates,
+    category,
+    total: templates.length
+  };
+
+  res.status(200).json(response);
 });

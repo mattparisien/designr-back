@@ -1,24 +1,29 @@
-const dotenv = require('dotenv');
+import dotenv from 'dotenv';
 
 // Load environment variables from .env file FIRST
 // This must come before any imports that might use environment variables
 dotenv.config();
 
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const morgan = require('morgan');
-const cookieParser = require('cookie-parser');
-const path = require('path');
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Now require modules that need environment variables
-const { connectDB } = require('./config/db'); // Import connectDB from db.js
-const authController = require('./controllers/authController');
-const vectorStoreService = require('./services/vectorStore');
-const vectorJobProcessor = require('./services/vectorJobProcessor');
-const imageAnalysisService = require('./services/imageAnalysisService');
-const imageVectorService = require('./services/imageVectorService');
-const pdfProcessingService = require('./services/pdfProcessingService');
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Now import modules that need environment variables
+import { connectDB } from './config/db.js'; // Import connectDB from db.js
+import authController from './controllers/authController.js';
+import vectorStoreService from './services/vectorStore.js';
+import vectorJobProcessor from './services/vectorJobProcessor.js';
+import imageAnalysisService from './services/imageAnalysisService.js';
+import imageVectorService from './services/imageVectorService.js';
+import pdfProcessingService from './services/pdfProcessingService.js';
 
 // Create Express app
 const app = express();
@@ -40,14 +45,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Import routes
 // const projectRoutes = require('./routes/projects');  // Temporarily disabled
-const authRoutes = require('./routes/auth');
-const presentationRoutes = require('./routes/presentations');
-const userRoutes = require('./routes/userRoutes'); // Import user routes
-const folderRoutes = require('./routes/folders');
-const assetRoutes = require('./routes/assets');
-const templateRoutes = require('./routes/templates'); // Import template routes
-const brandRoutes = require('./routes/brands'); // Import brand routes
-const chatRoutes = require('./routes/chat'); // Import chat routes
+import authRoutes from './routes/auth.js';
+import presentationRoutes from './routes/presentations.js';
+import userRoutes from './routes/userRoutes.js'; // Import user routes
+import folderRoutes from './routes/folders.js';
+import assetRoutes from './routes/assets.js';
+import templateRoutes from './routes/templates.js'; // Import template routes
+import brandRoutes from './routes/brands.js'; // Import brand routes
+import chatRoutes from './routes/chat.js'; // Import chat routes
 
 // Routes
 // app.use('/api/projects', projectRoutes);  // Temporarily disabled due to function mismatch

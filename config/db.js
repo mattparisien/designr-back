@@ -1,7 +1,8 @@
-const mongoose = require('mongoose');
-const { GridFsStorage } = require('multer-gridfs-storage');
-const crypto = require('crypto');
-const path = require('path');
+import mongoose from 'mongoose';
+import { GridFSBucket } from 'mongodb';
+import { GridFsStorage } from 'multer-gridfs-storage';
+import crypto from 'crypto';
+import path from 'path';
 
 let gridFsBucket; // To be initialized
 let dbInstanceForStorage; // To store the native db instance for GridFsStorage
@@ -24,7 +25,7 @@ const dbInitializationPromise = mongoose.connect(process.env.MONGODB_URI)
     }
     
     // Initialize gridFsBucket here
-    gridFsBucket = new mongoose.mongo.GridFSBucket(nativeDb, {
+    gridFsBucket = new GridFSBucket(nativeDb, {
       bucketName: 'uploads'
     });
 
@@ -91,17 +92,16 @@ const connectDB = async () => {
   }
 };
 
-module.exports = {
-  connectDB, // For server.js to await before starting
-  getGridFsBucket: () => {
-    if (!gridFsBucket) {
-      // This might be called if routes are accessed before connectDB() fully completes or if initialization failed.
-      console.error("getGridFsBucket: Attempted to access GridFSBucket, but it's not initialized. Ensure connectDB() in server.js completes successfully before handling requests.");
-      // Depending on desired behavior, could throw or return undefined.
-      // Throwing an error is safer to prevent further issues.
-      throw new Error("GridFSBucket is not initialized. Check server startup logs.");
-    }
-    return gridFsBucket;
-  },
-  storage // Export multer storage engine (relies on dbInitializationPromise)
+export { connectDB };
+export const getGridFsBucket = () => {
+  if (!gridFsBucket) {
+    // This might be called if routes are accessed before connectDB() fully completes or if initialization failed.
+    console.error("getGridFsBucket: Attempted to access GridFSBucket, but it's not initialized. Ensure connectDB() in server.js completes successfully before handling requests.");
+    // Depending on desired behavior, could throw or return undefined.
+    // Throwing an error is safer to prevent further issues.
+    throw new Error("GridFSBucket is not initialized. Check server startup logs.");
+  }
+  return gridFsBucket;
 };
+
+export { storage };

@@ -1,5 +1,39 @@
-const mongoose = require('mongoose');
-const { Schema } = mongoose;
+import mongoose, { Schema, Document, Model } from 'mongoose';
+
+// Define interfaces for better TypeScript support
+interface IMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+  metadata?: Record<string, any>;
+}
+
+interface IChatMetadata {
+  totalMessages: number;
+  lastActivity: Date;
+  tokenUsage?: {
+    prompt: number;
+    completion: number;
+    total: number;
+  };
+}
+
+interface IChat extends Document {
+  title: string;
+  userId: string;
+  messages: IMessage[];
+  metadata: IChatMetadata;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  addMessage(role: string, content: string, metadata?: Record<string, any>): void;
+  getFormattedMessages(maxMessages?: number): any[];
+}
+
+interface IChatModel extends Model<IChat> {
+  findOrCreateActiveChat(userId: string): Promise<IChat>;
+  getUserChats(userId: string, limit?: number): Promise<IChat[]>;
+}
 
 // Schema for individual messages in a conversation
 const MessageSchema = new Schema({
@@ -67,13 +101,16 @@ ChatSchema.index({ userId: 1, isActive: 1 });
 ChatSchema.index({ 'metadata.lastActivity': -1 });
 
 // Pre-save middleware to update metadata
-ChatSchema.pre('save', function(next) {
+ChatSchema.pre('save', function(this: IChat, next: () => void) {
+  if (!this.metadata) {
+    this.metadata = { totalMessages: 0, lastActivity: new Date() };
+  }
   this.metadata.totalMessages = this.messages.length;
   this.metadata.lastActivity = new Date();
   
   // Auto-generate title from first user message if still default
   if (this.title === 'New Conversation' && this.messages.length > 0) {
-    const firstUserMessage = this.messages.find(msg => msg.role === 'user');
+    const firstUserMessage = this.messages.find((msg: IMessage) => msg.role === 'user');
     if (firstUserMessage) {
       // Use first 50 characters of the first user message as title
       this.title = firstUserMessage.content.substring(0, 50) + 
@@ -85,7 +122,7 @@ ChatSchema.pre('save', function(next) {
 });
 
 // Instance methods
-ChatSchema.methods.addMessage = function(role, content, metadata = {}) {
+ChatSchema.methods.addMessage = function(role: string, content: string, metadata: Record<string, any> = {}) {
   const message = {
     role,
     content,
@@ -97,11 +134,11 @@ ChatSchema.methods.addMessage = function(role, content, metadata = {}) {
   return message;
 };
 
-ChatSchema.methods.getConversationHistory = function(maxMessages = 20) {
+ChatSchema.methods.getConversationHistory = function(maxMessages: number = 20) {
   // Return recent messages formatted for OpenAI API
   return this.messages
     .slice(-maxMessages) // Get the most recent messages
-    .map(msg => ({
+    .map((msg: IMessage) => ({
       role: msg.role,
       content: msg.content
     }));
@@ -118,7 +155,7 @@ ChatSchema.methods.getLastUserMessage = function() {
 };
 
 // Static methods
-ChatSchema.statics.findOrCreateActiveChat = async function(userId) {
+ChatSchema.statics.findOrCreateActiveChat = async function(userId: string) {
   // Find the most recent active chat for the user
   let chat = await this.findOne({ 
     userId, 
@@ -139,11 +176,11 @@ ChatSchema.statics.findOrCreateActiveChat = async function(userId) {
   return chat;
 };
 
-ChatSchema.statics.getUserChats = async function(userId, limit = 10) {
+ChatSchema.statics.getUserChats = async function(userId: string, limit: number = 10) {
   return this.find({ userId })
     .sort({ 'metadata.lastActivity': -1 })
     .limit(limit)
     .select('title metadata.lastActivity metadata.totalMessages isActive');
 };
 
-module.exports = mongoose.model('Chat', ChatSchema);
+export default mongoose.model<IChat, IChatModel>('Chat', ChatSchema);

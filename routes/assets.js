@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import assetController from '../controllers/assetController.js';
+
 const router = express.Router();
-const assetController = require('../controllers/assetController');
 
 // Configure the multer middleware for file uploads
 const upload = assetController.configureMulter();
@@ -65,4 +66,4 @@ router.delete('/all/delete', assetController.deleteAllAssets);
 // PATCH move asset to a different folder
 router.patch('/:id/move', assetController.moveAsset);
 
-module.exports = router;
+export default router;

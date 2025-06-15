@@ -1,7 +1,8 @@
-const express = require('express');
+import express from 'express';
+import authController from '../controllers/authController.js';
+import authMiddleware from '../middleware/auth.js';
+
 const router = express.Router();
-const authController = require('../controllers/authController');
-const authMiddleware = require('../middleware/auth');
 
 // POST /api/auth/register - Register a new user
 router.post('/register', authController.register);
@@ -31,4 +32,4 @@ router.put('/update-profile', authMiddleware, authController.updateProfile);
 router.get('/google', authController.googleAuth);
 router.get('/google/callback', authController.googleCallback);
 
-module.exports = router;
+export default router;

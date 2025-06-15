@@ -1,4 +1,4 @@
-const cloudinary = require('cloudinary').v2;
+import { v2 as cloudinary } from 'cloudinary';
 
 // Configure Cloudinary with credentials
 cloudinary.config({
@@ -8,4 +8,4 @@ cloudinary.config({
   secure: true // Use HTTPS
 });
 
-module.exports = cloudinary;
+export default cloudinary;

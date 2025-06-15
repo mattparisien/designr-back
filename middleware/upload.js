@@ -1,5 +1,5 @@
-const multer = require('multer');
-const { storage } = require('../config/db'); // Assuming db.js exports 'storage' for multer
+import multer from 'multer';
+import { storage } from '../config/db.js'; // Assuming db.js exports 'storage' for multer
 
 // Initialize upload middleware with the GridFS storage engine
 const upload = multer({ 
@@ -14,4 +14,4 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // Limit file size to 5MB
 });
 
-module.exports = upload;
+export default upload;

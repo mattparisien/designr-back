@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import chatController from '../controllers/chatController.js';
+
 const router = express.Router();
-const chatController = require('../controllers/chatController');
 
 // Health check endpoint (no auth required)
 router.get('/health', chatController.healthCheck);
@@ -23,4 +24,4 @@ router.patch('/:chatId/title', chatController.updateChatTitle);
 // Delete chat conversation
 router.delete('/:chatId', chatController.deleteChat);
 
-module.exports = router;
+export default router;

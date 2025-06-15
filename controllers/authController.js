@@ -1,9 +1,9 @@
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import passport from 'passport';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 
 // Log environment variables status for debugging (only in development)
 if (process.env.NODE_ENV !== 'production') {
@@ -49,7 +49,7 @@ passport.use(new GoogleStrategy({
 ));
 
 // Initialize passport
-exports.initializePassport = (app) => {
+export const initializePassport = (app) => {
   // Check if Google credentials are set
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
     console.warn('⚠️ WARNING: Google OAuth credentials are not properly configured in your environment variables.');
@@ -60,7 +60,7 @@ exports.initializePassport = (app) => {
 };
 
 // Register a new user
-exports.register = async (req, res) => {
+export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -107,7 +107,7 @@ exports.register = async (req, res) => {
 };
 
 // Login user
-exports.login = async (req, res) => {
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -146,7 +146,7 @@ exports.login = async (req, res) => {
 };
 
 // Get current user data
-exports.getCurrentUser = async (req, res) => {
+export const getCurrentUser = async (req, res) => {
   try {
     // User data comes from the auth middleware
     const user = await User.findById(req.userId).select('-password');
@@ -162,7 +162,7 @@ exports.getCurrentUser = async (req, res) => {
 };
 
 // Verify token is valid
-exports.verifyToken = async (req, res) => {
+export const verifyToken = async (req, res) => {
   try {
     res.status(200).json({ valid: true, user: req.user });
   } catch (error) {
@@ -172,7 +172,7 @@ exports.verifyToken = async (req, res) => {
 };
 
 // Logout user - This is mostly handled client-side by removing the token from storage
-exports.logout = async (req, res) => {
+export const logout = async (req, res) => {
   try {
     // On the server side, we don't need to do much since we're using stateless JWTs
     // In a production app, you might want to add the token to a blacklist until it expires
@@ -185,7 +185,7 @@ exports.logout = async (req, res) => {
 };
 
 // Request password reset
-exports.forgotPassword = async (req, res) => {
+export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -231,7 +231,7 @@ exports.forgotPassword = async (req, res) => {
 };
 
 // Reset password with token
-exports.resetPassword = async (req, res) => {
+export const resetPassword = async (req, res) => {
   try {
     const { password } = req.body;
     const { token } = req.params;
@@ -285,7 +285,7 @@ exports.resetPassword = async (req, res) => {
 };
 
 // Update user profile
-exports.updateProfile = async (req, res) => {
+export const updateProfile = async (req, res) => {
   try {
     const { name, email, currentPassword, newPassword } = req.body;
     const userId = req.userId;
@@ -341,13 +341,13 @@ exports.updateProfile = async (req, res) => {
 };
 
 // Start Google OAuth authentication
-exports.googleAuth = passport.authenticate('google', {
+export const googleAuth = passport.authenticate('google', {
   scope: ['profile', 'email'],
   session: false
 });
 
 // Google OAuth callback
-exports.googleCallback = (req, res) => {
+export const googleCallback = (req, res) => {
   passport.authenticate('google', { session: false }, (err, user) => {
     if (err || !user) {
       // Handle error - redirect to login with error
@@ -392,4 +392,19 @@ exports.googleCallback = (req, res) => {
 
     res.send(htmlWithScript);
   })(req, res);
+};
+
+// Default export
+export default {
+  initializePassport,
+  register,
+  login,
+  getCurrentUser,
+  verifyToken,
+  logout,
+  forgotPassword,
+  resetPassword,
+  updateProfile,
+  googleAuth,
+  googleCallback
 };

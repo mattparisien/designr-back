@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import * as presentationController from '../dist/controllers/presentationController.js';
+
 const router = express.Router();
-const presentationController = require('../dist/controllers/presentationController');
 
 // GET all presentations (with optional filtering)
 router.get('/', presentationController.getPresentations);
@@ -20,4 +21,4 @@ router.delete('/:id', presentationController.deletePresentation);
 // POST clone presentation
 router.post('/:id/clone', presentationController.clonePresentation);
 
-module.exports = router;
+export default router;

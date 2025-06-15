@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import * as brandController from '../dist/controllers/brand.controller.js';
+
 const router = express.Router();
-const brandController = require('../dist/controllers/brand.controller');
 
 // Get all brands for a user
 router.get('/', brandController.getBrands);
@@ -26,4 +27,4 @@ router.post('/:id/add-asset', brandController.updateBrandWithAsset);
 // Share a brand with other users
 router.post('/:id/share', brandController.shareBrand);
 
-module.exports = router;
+export default router;

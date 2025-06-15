@@ -1,8 +1,9 @@
-const express = require('express');
+import express from 'express';
+import userController from '../controllers/userController.js';
+import authMiddleware from '../middleware/auth.js';
+import uploadMiddleware from '../middleware/upload.js'; // Multer middleware for file uploads
+
 const router = express.Router();
-const userController = require('../controllers/userController');
-const authMiddleware = require('../middleware/auth');
-const uploadMiddleware = require('../middleware/upload'); // Multer middleware for file uploads
 
 // GET /api/users/profile - Get current user's profile
 router.get('/profile', authMiddleware, userController.getUserProfile);
@@ -24,4 +25,4 @@ router.get('/picture/:filename', userController.serveProfilePicture);
 // GET /api/users/picture/id/:id - Serve a profile picture by GridFS ID (optional)
 router.get('/picture/id/:id', userController.serveProfilePictureById);
 
-module.exports = router;
+export default router;

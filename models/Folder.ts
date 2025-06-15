@@ -1,5 +1,22 @@
-const mongoose = require('mongoose');
-const { Schema } = mongoose;
+import mongoose, { Schema, Document, Model } from 'mongoose';
+
+// Define interface for better TypeScript support
+interface IFolder extends Document {
+  name: string;
+  description?: string;
+  userId: string;
+  parentId?: string;
+  slug: string;
+  color?: string;
+  isStarred: boolean;
+  projectCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface IFolderModel extends Model<IFolder> {
+  findBySlug(slug: string, userId: string): Promise<IFolder | null>;
+}
 
 const FolderSchema = new Schema({
   name: {
