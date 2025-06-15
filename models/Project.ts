@@ -1,14 +1,18 @@
-const mongoose = require('mongoose');
+import { Project } from "@canva-clone/shared-types/dist/models/project";
+import { Page, Element } from "@canva-clone/shared-types";
+import mongoose from "mongoose";
+const { Schema, model, Document } = mongoose;
+
+type ProjectDocument = Project;
 
 // Define the schema for individual elements in a project
-const ElementSchema = new mongoose.Schema({
+const ElementSchema = new Schema<Element>({
   id: { type: String, required: true },
   type: { type: String, required: true }, // text, image, shape, etc.
   x: { type: Number, required: true },
   y: { type: Number, required: true },
   width: { type: Number, required: true },
   height: { type: Number, required: true },
-  // Text-specific properties
   content: { type: String },
   fontSize: { type: Number },
   fontFamily: { type: String },
@@ -16,63 +20,32 @@ const ElementSchema = new mongoose.Schema({
   isBold: { type: Boolean },
   isItalic: { type: Boolean },
   isUnderlined: { type: Boolean },
-  color: { type: String },
-  // Image-specific properties
-  src: { type: String },
-  alt: { type: String },
-  // Shape-specific properties
-  shapeType: { type: String }, // rectangle, circle, etc.
   backgroundColor: { type: String },
   borderColor: { type: String },
   borderWidth: { type: Number },
-  // Common style properties
-  opacity: { type: Number },
   rotation: { type: Number },
-  zIndex: { type: Number },
 }, { _id: false }); // Don't generate MongoDB _id for nested elements
 
 // Define the schema for pages/artboards in a project
-const PageSchema = new mongoose.Schema({
+const PageSchema = new Schema<Page>({
   id: { type: String, required: true },
-  name: { type: String },
-  dimensions: {
-    width: { type: Number, required: true },
-    height: { type: Number, required: true },
-    aspectRatio: { type: String, required: true }
+  canvas: {
+    dimensions: {
+      width: { type: Number, required: true },
+      height: { type: Number, required: true },
+      aspectRatio: { type: String, required: true },
+    },
+    background: {
+      type: { type: String, enum: ['color', 'image', 'gradient'], default: 'color' },
+      value: { type: String, default: '#ffffff' } // Default to white background
+    },
+    elements: [ElementSchema], // Array of elements on the page
   },
   thumbnail: { type: String },
-  elements: [ElementSchema],
-  background: {
-    type: { type: String, enum: ['color', 'image', 'gradient'], default: 'color' },
-    value: { type: String, default: '#ffffff' }
-  }
 }, { _id: false }); // Don't generate MongoDB _id for nested pages
 
-// Design specification schema (nested object for hierarchical design types)
-const DesignSpecSchema = new mongoose.Schema({
-  mainType: {
-    type: String,
-    enum: ['social', 'presentation', 'print', 'custom'],
-    required: true
-  },
-  platform: {
-    type: String // e.g., 'instagram', 'facebook', 'widescreen', 'document'
-  },
-  format: {
-    type: String // e.g., 'post', 'story', 'standard', 'a4'
-  },
-  category: {
-    type: String // e.g., 'marketing', 'stationery' for print designs
-  },
-  dimensions: {
-    width: { type: Number, required: true },
-    height: { type: Number, required: true },
-    aspectRatio: { type: String, required: true }
-  }
-}, { _id: false });
-
 // Main project schema
-const ProjectSchema = new mongoose.Schema({
+const ProjectSchema = new Schema<ProjectDocument>({
   title: {
     type: String,
     required: true,
@@ -82,21 +55,12 @@ const ProjectSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  type: {
-    type: String,
-    enum: ['presentation', 'social', 'print', 'custom'],
-    default: 'custom'
-  },
   userId: {
     type: String,
     required: true
   },
   thumbnail: {
     type: String
-  },
-  category: {
-    type: String,
-    enum: ['marketing', 'education', 'events', 'personal', 'other']
   },
   tags: [{
     type: String
@@ -113,24 +77,8 @@ const ProjectSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  sharedWith: [{
-    type: String
-  }],
   pages: [PageSchema],
-  
-  // Legacy dimensions field for backward compatibility
-  dimensions: {
-    width: { type: Number },
-    height: { type: Number },
-    aspectRatio: { type: String }
-  },
-  
-  // New hierarchical design specification (replaces simple dimensions)
-  designSpec: DesignSpecSchema,
-  
-  metadata: {
-    type: mongoose.Schema.Types.Mixed
-  }
+
 }, {
   timestamps: true, // Automatically add createdAt and updatedAt fields
 });

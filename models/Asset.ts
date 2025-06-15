@@ -1,7 +1,13 @@
+import { Asset } from '@canva-clone/shared-types/dist/models/asset';
 import mongoose from 'mongoose';
-const { Schema } = mongoose;
+const { Schema, model, Document } = mongoose;
 
-const AssetSchema = new Schema({
+export interface AssetDocument
+  extends Asset,
+  Document {
+}
+
+const AssetSchema = new Schema<AssetDocument>({
   name: {
     type: String,
     required: true,
@@ -33,9 +39,6 @@ const AssetSchema = new Schema({
     type: Number, // size in bytes
     required: true
   },
-  size: {
-    type: Number // Legacy field for backward compatibility
-  },
   url: {
     type: String, // URL to the file in storage
     required: true
@@ -55,7 +58,7 @@ const AssetSchema = new Schema({
   thumbnailCloudinaryId: {
     type: String // Cloudinary public_id for the thumbnail
   },
-  
+
   // Media-specific properties
   width: {
     type: Number // Image/video width
@@ -66,14 +69,6 @@ const AssetSchema = new Schema({
   duration: {
     type: Number // Video/audio duration in seconds
   },
-  
-  isShared: {
-    type: Boolean,
-    default: false
-  },
-  sharedWith: [{
-    type: String // List of user IDs the asset is shared with
-  }],
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {} // Store additional info like image dimensions, duration, etc.

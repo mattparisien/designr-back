@@ -15,8 +15,7 @@ import type {
     BulkDeleteProjectsRequest,
     CreateProjectRequest,
     DuplicateProjectRequest,
-    ListProjectsRequest,
-    UpdateProjectRequest,
+    UpdateProjectRequest
 } from '@canva-clone/shared-types/dist/api/project/project.requests';
 
 import type {
