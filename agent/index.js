@@ -74,6 +74,9 @@ function createExecutors({ vectorStore = {}, imageAnalysis = {} }) {
     },
     
     create_social_media_project: async ({ title, platform, format = 'post', category = 'personal' }) => {
+      // Ensure category is valid
+      const validCategories = ['marketing','education','events','personal','other'];
+      const cat = validCategories.includes(category) ? category : 'other';
       // Build project payload similar to createSocialMedia.js
       let canvasSize, designSpec;
       if (format) {
@@ -91,7 +94,7 @@ function createExecutors({ vectorStore = {}, imageAnalysis = {} }) {
         description: `Optimized for ${designSpec.platform} ${designSpec.format}`,
         type: 'social',
         userId: 'default-user',
-        category,
+        category: cat,
         canvasSize,
         designSpec,
         mainType: 'social',
