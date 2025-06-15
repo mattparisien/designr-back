@@ -1,6 +1,9 @@
 // agent/index.js — Responses-API implementation (no Agents SDK)
 require('dotenv').config();
 const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+const { fetchJson } = require('../utils/fetchJson');
+const platformSizes = require('./config/platformSizes');
+const { getHierarchicalDimensions } = require('./config/hierarchicalPlatforms');
 
 /* ------------------------------------------------------------------ *
  * 0.  Config                                                         *
@@ -71,29 +74,46 @@ function createExecutors({ vectorStore = {}, imageAnalysis = {} }) {
     },
     
     create_social_media_project: async ({ title, platform, format = 'post', category = 'personal' }) => {
-      // Import the real tool implementation
-      try {
-        const { createSocialMediaTool } = require('./tools/projects/createSocialMedia');
-        const tool = await createSocialMediaTool();
-        const mockContext = { userId: 'default-user' };
-        const result = await tool.execute({ title, platform, format, category }, mockContext);
-        return JSON.parse(result);
-      } catch (error) {
-        console.error('Error in create_social_media_project:', error);
-        // Fallback to simple response
-        return {
-          success: true,
-          project: {
-            id: `soc_${Date.now()}`,
-            title,
-            platform,
-            format,
-            category,
-            canvasSize: platform === 'instagram' ? { width: 1080, height: 1080 } : { width: 1200, height: 630 }
-          },
-          message: `Created "${title}" for ${platform} ${format} successfully!`
-        };
+      // Build project payload similar to createSocialMedia.js
+      let canvasSize, designSpec;
+      if (format) {
+        canvasSize = getHierarchicalDimensions('social', platform, format);
+        designSpec = { mainType: 'social', platform, format, dimensions: canvasSize };
+      } else if (platformSizes[platform]) {
+        canvasSize = platformSizes[platform];
+        const [plat, fmt] = platform.split('-');
+        designSpec = { mainType: 'social', platform: plat, format: fmt || 'post', dimensions: canvasSize };
+      } else {
+        throw new Error(`Unsupported platform: ${platform}`);
       }
+      const projectData = {
+        title,
+        description: `Optimized for ${designSpec.platform} ${designSpec.format}`,
+        type: 'social',
+        userId: 'default-user',
+        category,
+        canvasSize,
+        designSpec,
+        mainType: 'social',
+        platform: designSpec.platform,
+        format: designSpec.format
+      };
+      // create project via backend API
+      const project = await fetchJson('/api/projects', { method: 'POST', body: projectData });
+      return {
+        success: true,
+        project: {
+          id: project._id,
+          title: project.title,
+          type: project.type,
+          category: project.category,
+          platform: designSpec.platform,
+          format: designSpec.format,
+          canvasSize: project.canvasSize,
+          designSpec: project.designSpec
+        },
+        message: `Created "${title}" for ${designSpec.platform} ${designSpec.format} successfully!`
+      };
     }
   };
 }
@@ -176,26 +196,19 @@ async function runAssistant(prompt, { vectorStore = {}, imageAnalysis = {} } = {
 
     // Custom function tool
     console.log(`⚙️ Executing custom tool: ${name} with args: ${argJson}`);
-    const args   = JSON.parse(argJson || '{}');
-    const runFn  = EXECUTORS[name];
+    const args = JSON.parse(argJson || '{}');
+    const runFn = EXECUTORS[name];
     let result;
-    try        { result = runFn ? await runFn(args) : { error: 'tool not found' }; }
+    try { result = runFn ? await runFn(args) : { error: 'tool not found' }; }
     catch (err) { result = { error: err.message }; }
 
     console.log(`📤 Tool result:`, result);
 
-    // Since Responses API doesn't support 'function' role, we'll return the combined result
+    // Combine result and return, track toolCalls
     const assistantMsg = outArr.find(o => o.type === 'message');
     const assistantText = assistantMsg?.content?.map(c => c.text).join(' ') || '';
-    
-    // Combine the assistant's message with the tool execution result
     const combinedOutput = assistantText + '\n\n✅ Project Created: ' + (result.message || JSON.stringify(result));
-    
-    return { 
-      finalOutput: combinedOutput, 
-      toolResult: result,
-      toolCalls: [{ name, args, result }] // Track tool calls for testing
-    };
+    return { finalOutput: combinedOutput, toolCalls: [{ name, args, result }] };
   }
 
   return { finalOutput: '(stopped after 8 tool calls)' };
