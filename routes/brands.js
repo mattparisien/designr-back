@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const brandController = require('../controllers/brandController');
+const brandController = require('../dist/controllers/brand.controller');
 
 // Get all brands for a user
 router.get('/', brandController.getBrands);
