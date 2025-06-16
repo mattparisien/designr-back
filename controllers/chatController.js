@@ -1,5 +1,7 @@
-const ProjectAgentService = require('../services/projectAgentService');
-const Chat = require('../models/Chat');
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const ProjectAgentService = require('../services/projectAgentService.ts');
+import Chat from '../models/Chat.js';
 
 // Initialize the project agent service
 let projectAgentService = null;
