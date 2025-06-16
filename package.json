@@ -5,10 +5,10 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "tsx server.js",
     "start:ts": "ts-node server.ts",
     "build": "tsc && npm run copy-assets",
-    "copy-assets": "cp -r models dist/ && cp -r config dist/ && cp -r utils dist/ && cp -r middleware dist/ && cp -r services dist/",
+    "copy-assets": "cp -r models dist/ && cp -r config dist/ && cp -r utils dist/ && cp -r middleware dist/ && cp -r services dist/ && cp -r routes dist/ && cp server.js dist/",
     "dev": "nodemon server.js",
     "dev:ts": "nodemon --exec ts-node server.ts",
     "test": "node --experimental-vm-modules ./node_modules/.bin/jest",
@@ -71,6 +71,7 @@
     "mongodb-memory-server": "^9.5.0",
     "nodemon": "^2.0.22",
     "ts-node": "^10.9.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.0.0"
   },
   "resolutions": {

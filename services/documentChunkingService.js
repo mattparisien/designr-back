@@ -383,4 +383,4 @@ class DocumentChunkingService {
 // Create and export singleton instance
 const documentChunkingService = new DocumentChunkingService();
 
-module.exports = documentChunkingService;
+export default documentChunkingService;

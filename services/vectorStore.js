@@ -1,7 +1,6 @@
-const { Pinecone } = require('@pinecone-database/pinecone');
-const OpenAI = require('openai');
-const fs = require('fs');
-const path = require('path');
+import { Pinecone } from '@pinecone-database/pinecone';
+import OpenAI from 'openai';
+
 
 class VectorStoreService {
   constructor() {
@@ -57,7 +56,7 @@ class VectorStoreService {
             }
           }
         });
-        
+
         // Wait for index to be ready
         console.log('Waiting for index to be ready...');
         await this.waitForIndexReady();
@@ -71,7 +70,7 @@ class VectorStoreService {
   async waitForIndexReady() {
     const maxAttempts = 30;
     let attempts = 0;
-    
+
     while (attempts < maxAttempts) {
       try {
         const indexStats = await this.pinecone.index(this.indexName).describeIndexStats();
@@ -82,11 +81,11 @@ class VectorStoreService {
       } catch (error) {
         // Index not ready yet, continue waiting
       }
-      
+
       attempts++;
       await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
     }
-    
+
     throw new Error('Index failed to become ready within expected time');
   }
 
@@ -124,59 +123,59 @@ class VectorStoreService {
       if (asset.metadata.description) parts.push(asset.metadata.description);
       if (asset.metadata.alt) parts.push(asset.metadata.alt);
       if (asset.metadata.keywords) parts.push(...asset.metadata.keywords);
-      
+
       // AI-generated image content analysis
       if (asset.type === 'image') {
         // Main AI description
         if (asset.metadata.aiDescription) {
           parts.push(asset.metadata.aiDescription);
         }
-        
+
         // Detected objects
         if (asset.metadata.detectedObjects && Array.isArray(asset.metadata.detectedObjects)) {
           parts.push(...asset.metadata.detectedObjects);
         }
-        
+
         // Dominant colors
         if (asset.metadata.dominantColors && Array.isArray(asset.metadata.dominantColors)) {
           parts.push(...asset.metadata.dominantColors);
         }
-        
+
         // Text extracted from image (OCR)
         if (asset.metadata.extractedText) {
           parts.push(asset.metadata.extractedText);
         }
-        
+
         // Visual themes and concepts
         if (asset.metadata.visualThemes && Array.isArray(asset.metadata.visualThemes)) {
           parts.push(...asset.metadata.visualThemes);
         }
-        
+
         // Mood and atmosphere
         if (asset.metadata.mood) {
           parts.push(asset.metadata.mood);
         }
-        
+
         // Artistic style
         if (asset.metadata.style) {
           parts.push(asset.metadata.style);
         }
-        
+
         // Categories for broader classification
         if (asset.metadata.categories && Array.isArray(asset.metadata.categories)) {
           parts.push(...asset.metadata.categories);
         }
-        
+
         // Composition description
         if (asset.metadata.composition) {
           parts.push(asset.metadata.composition);
         }
-        
+
         // Lighting conditions
         if (asset.metadata.lighting) {
           parts.push(asset.metadata.lighting);
         }
-        
+
         // Setting or environment
         if (asset.metadata.setting) {
           parts.push(asset.metadata.setting);
@@ -220,7 +219,7 @@ class VectorStoreService {
 
       let embedding;
       let vectorSource = 'text';
-      
+
       // Use hybrid vector if available (for images with AI analysis)
       if (asset.type === 'image' && asset.metadata?.hybridVector) {
         embedding = asset.metadata.hybridVector;
@@ -247,7 +246,7 @@ class VectorStoreService {
           createdAt: asset.createdAt ? asset.createdAt.toISOString() : new Date().toISOString(),
           searchableText: this.createSearchableText(asset),
           vectorSource: vectorSource, // Track which type of vector this is
-          
+
           // Add AI analysis metadata for better search results
           ...(asset.metadata?.aiDescription && { aiDescription: asset.metadata.aiDescription }),
           ...(asset.metadata?.mood && { mood: asset.metadata.mood }),
@@ -274,7 +273,7 @@ class VectorStoreService {
       }
 
       const vectors = [];
-      
+
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         try {
@@ -306,7 +305,7 @@ class VectorStoreService {
               createdAt: parentAsset.createdAt ? parentAsset.createdAt.toISOString() : new Date().toISOString(),
               searchableText: searchableText,
               vectorSource: 'document_chunk',
-              
+
               // Add chunk-specific metadata
               ...(chunk.keywords && { keywords: chunk.keywords.slice(0, 5) }),
               ...(chunk.summary && { summary: chunk.summary.substring(0, 500) }),
@@ -338,13 +337,13 @@ class VectorStoreService {
   async addDocumentWithChunks(asset, chunks) {
     try {
       console.log(`Adding document with ${chunks.length} chunks for asset: ${asset.name}`);
-      
+
       // Add the asset to vector store
       await this.addAsset(asset);
-      
+
       // Add all chunks to vector store
       await this.addDocumentChunks(chunks, asset);
-      
+
       console.log(`Successfully added asset and ${chunks.length} chunks to vector store`);
     } catch (error) {
       console.error('Error adding document with chunks to vector store:', error);
@@ -438,7 +437,7 @@ class VectorStoreService {
 
       // Build filter for user-specific search
       const filter = {};
-      
+
       // Only add userId filter if userId is provided (not null)
       if (userId !== null && userId !== undefined) {
         filter.userId = { $eq: userId };
@@ -505,7 +504,7 @@ class VectorStoreService {
       const filter = {
         type: { $eq: 'document_chunk' }
       };
-      
+
       // Only add userId filter if userId is provided (not null)
       if (userId !== null && userId !== undefined) {
         filter.userId = { $eq: userId };
@@ -579,7 +578,7 @@ class VectorStoreService {
       const chunks = searchResponse.matches;
       const totalWordCount = chunks.reduce((sum, chunk) => sum + (chunk.metadata.wordCount || 0), 0);
       const sections = [...new Set(chunks.map(chunk => chunk.metadata.section).filter(Boolean))];
-      
+
       // Extract keywords from all chunks
       const allKeywords = chunks.flatMap(chunk => chunk.metadata.keywords || []);
       const keywordCounts = {};
@@ -587,7 +586,7 @@ class VectorStoreService {
         keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1;
       });
       const topKeywords = Object.entries(keywordCounts)
-        .sort(([,a], [,b]) => b - a)
+        .sort(([, a], [, b]) => b - a)
         .slice(0, 10)
         .map(([keyword]) => keyword);
 
@@ -720,4 +719,4 @@ class VectorStoreService {
 // Create and export singleton instance
 const vectorStoreService = new VectorStoreService();
 
-module.exports = vectorStoreService;
+export default vectorStoreService;

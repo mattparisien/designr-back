@@ -1,8 +1,8 @@
 
-const OpenAI = require('openai');
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
+import fs from 'fs';
+import OpenAI from 'openai';
+import path from 'path';
+
 
 class ImageAnalysisService {
   constructor() {
@@ -80,7 +80,7 @@ Focus on providing keywords and descriptions that would be useful for semantic s
       });
 
       const analysisText = response.choices[0].message.content;
-      
+
       // Try to parse the JSON response
       let analysis;
       try {
@@ -160,9 +160,9 @@ Focus on providing keywords and descriptions that would be useful for semantic s
       const imageBuffer = fs.readFileSync(filePath);
       const base64Image = imageBuffer.toString('base64');
       const mimeType = this.getMimeTypeFromFile(filePath);
-      
+
       const dataUrl = `data:${mimeType};base64,${base64Image}`;
-      
+
       return await this.analyzeImage(dataUrl);
     } catch (error) {
       console.error('Error analyzing local image:', error);
@@ -233,7 +233,7 @@ Focus on providing keywords and descriptions that would be useful for semantic s
    */
   extractThemesAndCategories(analysis) {
     if (!analysis) return { themes: [], categories: [] };
-    
+
     return {
       themes: (analysis.themes || []).filter(theme => theme && typeof theme === 'string'),
       categories: (analysis.categories || []).filter(cat => cat && typeof cat === 'string')
@@ -243,4 +243,4 @@ Focus on providing keywords and descriptions that would be useful for semantic s
 
 // Export singleton instance
 const imageAnalysisService = new ImageAnalysisService();
-module.exports = imageAnalysisService;
+export default imageAnalysisService;

@@ -1,7 +1,8 @@
-const csv = require('csv-parser');
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
+import axios from 'axios';
+import csv from 'csv-parser';
+import fs from 'fs';
+import path from 'path';
+
 
 class CSVProcessingService {
     constructor() {
@@ -341,4 +342,4 @@ class CSVProcessingService {
     }
 }
 
-module.exports = new CSVProcessingService();
+export default new CSVProcessingService();

@@ -20,7 +20,8 @@ import { connectDB } from './config/db.js'; // Import connectDB from db.js
 // import authController from './controllers/authController.js';
 import imageAnalysisService from './services/imageAnalysisService.js';
 import imageVectorService from './services/imageVectorService.js';
-import pdfProcessingService from './services/pdfProcessingService.js';
+// Temporarily comment out PDF service to debug startup issue
+// import pdfProcessingService from './services/pdfProcessingService.js';
 import vectorStoreService from './services/vectorStore.js';
 
 // Create Express app
@@ -43,8 +44,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Import routes
 // const projectRoutes = require('./routes/projects');  // Temporarily disabled
-import authRoutes from './routes/auth.js';
-import presentationRoutes from './routes/presentations.js';
+// import authRoutes from './routes/auth.js';
+// import presentationRoutes from './routes/presentations.js';
 // import userRoutes from './routes/userRoutes.js'; // Import user routes
 import assetRoutes from './routes/assets.js';
 import brandRoutes from './routes/brands.js'; // Import brand routes
@@ -54,8 +55,8 @@ import templateRoutes from './routes/templates.js'; // Import template routes
 
 // Routes
 // app.use('/api/projects', projectRoutes);  // Temporarily disabled due to function mismatch
-app.use('/api/auth', authRoutes);
-app.use('/api/presentations', presentationRoutes);
+// app.use('/api/auth', authRoutes);
+// app.use('/api/presentations', presentationRoutes);
 // app.use('/api/users', userRoutes); // Use user routes
 app.use('/api/folders', folderRoutes);
 app.use('/api/assets', assetRoutes);
@@ -98,17 +99,17 @@ connectDB() // Use connectDB from db.js
       console.warn('Visual-focused vector generation will be disabled, falling back to text-only');
     }
 
-    // Initialize PDF processing service
-    try {
-      await pdfProcessingService.initialize();
-      console.log('PDF processing service initialized');
-    } catch (error) {
-      console.warn('PDF processing service initialization failed:', error.message);
-      console.warn('PDF content extraction will be disabled');
-    }
+    // Initialize PDF processing service (temporarily disabled for debugging)
+    // try {
+    //   await pdfProcessingService.initialize();
+    //   console.log('PDF processing service initialized');
+    // } catch (error) {
+    //   console.warn('PDF processing service initialization failed:', error.message);
+    //   console.warn('PDF content extraction will be disabled');
+    // }
 
-    // Initialize Passport for Google OAuth
-    authController.initializePassport(app);
+    // Initialize Passport for Google OAuth (temporarily disabled)
+    // authController.initializePassport(app);
 
     // Start the server after successful DB connection
     app.listen(PORT, () => {

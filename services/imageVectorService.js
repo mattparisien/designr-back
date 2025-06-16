@@ -1,7 +1,6 @@
-
-const OpenAI = require('openai');
-const fs = require('fs');
-const axios = require('axios');
+import OpenAI from 'openai';
+import fs from 'fs';
+import axios from 'axios';
 
 class ImageVectorService {
   constructor() {
@@ -142,4 +141,4 @@ class ImageVectorService {
 
 // Export singleton instance
 const imageVectorService = new ImageVectorService();
-module.exports = imageVectorService;
+export default imageVectorService;

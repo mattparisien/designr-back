@@ -374,4 +374,4 @@ This column contains ${stats.dataType} data with ${stats.uniqueValues} unique va
     }
 }
 
-module.exports = new CSVChunkingService();
+export default new CSVChunkingService();

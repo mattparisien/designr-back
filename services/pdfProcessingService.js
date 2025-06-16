@@ -1,8 +1,9 @@
-const pdf = require('pdf-parse');
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
+import pdf from 'pdf-parse';
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import http from 'http';
+
 
 class PDFProcessingService {
   constructor() {
@@ -372,4 +373,4 @@ class PDFProcessingService {
 // Create and export singleton instance
 const pdfProcessingService = new PDFProcessingService();
 
-module.exports = pdfProcessingService;
+export default pdfProcessingService;

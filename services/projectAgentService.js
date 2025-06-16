@@ -6,13 +6,14 @@
 // Now with proper hosted tool call support for web search.
 // ---------------------------------------------------------------------------
 
-require('dotenv').config();
+import dotenv from "dotenv";
+dotenv.config();
 
 // Local modules -------------------------------------------------------------
-const { buildAgent } = require('../agent/index');
-const { requireDynamic } = require('../utils/dynamicImports');
-const vectorStore = require('./vectorStore');
-const imageAnalysis = require('./imageAnalysisService');
+import { buildAgent } from '../agent/index';
+import { requireDynamic } from '../utils/dynamicImports';
+import vectorStore from './vectorStore';
+import imageAnalysis from './imageAnalysisService';
 
 /**
  * ProjectAgentService
@@ -320,4 +321,4 @@ class ProjectAgentService {
   }
 }
 
-module.exports = ProjectAgentService;
+export default ProjectAgentService;

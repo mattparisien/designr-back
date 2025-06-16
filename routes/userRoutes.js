@@ -1,5 +1,5 @@
 import express from 'express';
-import userController from '../controllers/userController.js';
+import * as userController from '../controllers/userController.js';
 import authMiddleware from '../middleware/auth.js';
 import uploadMiddleware from '../middleware/upload.js'; // Multer middleware for file uploads
 

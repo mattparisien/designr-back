@@ -1,11 +1,12 @@
-const Asset = require('../models/Asset');
-const vectorStoreService = require('../services/vectorStore');
-const imageAnalysisService = require('./imageAnalysisService');
-const imageVectorService = require('./imageVectorService');
-const pdfProcessingService = require('./pdfProcessingService');
-const documentChunkingService = require('./documentChunkingService');
-const csvProcessingService = require('./csvProcessingService');
-const csvChunkingService = require('./csvChunkingService');
+import Asset from '../models/Asset';
+import vectorStoreService from '../services/vectorStore';
+import imageAnalysisService from './imageAnalysisService';
+import imageVectorService from './imageVectorService';
+import pdfProcessingService from './pdfProcessingService';
+import documentChunkingService from './documentChunkingService';
+import csvProcessingService from './csvProcessingService';
+import csvChunkingService from './csvChunkingService';
+
 
 class VectorJobProcessor {
   constructor() {
@@ -776,4 +777,4 @@ class VectorJobProcessor {
 // Create and export singleton instance
 const vectorJobProcessor = new VectorJobProcessor();
 
-module.exports = vectorJobProcessor;
+export default vectorJobProcessor;
