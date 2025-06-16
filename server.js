@@ -4,11 +4,10 @@ import dotenv from 'dotenv';
 // This must come before any imports that might use environment variables
 dotenv.config();
 
-import express from 'express';
-import mongoose from 'mongoose';
-import cors from 'cors';
-import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import express from 'express';
+import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -18,12 +17,11 @@ const __dirname = path.dirname(__filename);
 
 // Now import modules that need environment variables
 import { connectDB } from './config/db.js'; // Import connectDB from db.js
-import authController from './controllers/authController.js';
-import vectorStoreService from './services/vectorStore.js';
-import vectorJobProcessor from './services/vectorJobProcessor.js';
+// import authController from './controllers/authController.js';
 import imageAnalysisService from './services/imageAnalysisService.js';
 import imageVectorService from './services/imageVectorService.js';
 import pdfProcessingService from './services/pdfProcessingService.js';
+import vectorStoreService from './services/vectorStore.js';
 
 // Create Express app
 const app = express();
@@ -47,18 +45,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 // const projectRoutes = require('./routes/projects');  // Temporarily disabled
 import authRoutes from './routes/auth.js';
 import presentationRoutes from './routes/presentations.js';
-import userRoutes from './routes/userRoutes.js'; // Import user routes
-import folderRoutes from './routes/folders.js';
+// import userRoutes from './routes/userRoutes.js'; // Import user routes
 import assetRoutes from './routes/assets.js';
-import templateRoutes from './routes/templates.js'; // Import template routes
 import brandRoutes from './routes/brands.js'; // Import brand routes
 import chatRoutes from './routes/chat.js'; // Import chat routes
+import folderRoutes from './routes/folders.js';
+import templateRoutes from './routes/templates.js'; // Import template routes
 
 // Routes
 // app.use('/api/projects', projectRoutes);  // Temporarily disabled due to function mismatch
 app.use('/api/auth', authRoutes);
 app.use('/api/presentations', presentationRoutes);
-app.use('/api/users', userRoutes); // Use user routes
+// app.use('/api/users', userRoutes); // Use user routes
 app.use('/api/folders', folderRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/templates', templateRoutes); // Use template routes
@@ -81,7 +79,7 @@ connectDB() // Use connectDB from db.js
       console.warn('Vector store service initialization failed:', error.message);
       console.warn('Vector search features will be disabled');
     }
-    
+
     // Initialize image analysis service
     try {
       await imageAnalysisService.initialize();
@@ -90,7 +88,7 @@ connectDB() // Use connectDB from db.js
       console.warn('Image analysis service initialization failed:', error.message);
       console.warn('Image semantic analysis will be disabled');
     }
-    
+
     // Initialize image vector service (hybrid approach)
     try {
       await imageVectorService.initialize();
@@ -99,7 +97,7 @@ connectDB() // Use connectDB from db.js
       console.warn('Image vector service initialization failed:', error.message);
       console.warn('Visual-focused vector generation will be disabled, falling back to text-only');
     }
-    
+
     // Initialize PDF processing service
     try {
       await pdfProcessingService.initialize();
@@ -108,10 +106,10 @@ connectDB() // Use connectDB from db.js
       console.warn('PDF processing service initialization failed:', error.message);
       console.warn('PDF content extraction will be disabled');
     }
-    
+
     // Initialize Passport for Google OAuth
     authController.initializePassport(app);
-    
+
     // Start the server after successful DB connection
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
@@ -124,9 +122,9 @@ connectDB() // Use connectDB from db.js
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Something went wrong!', 
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined 
+  res.status(500).json({
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 

@@ -27,7 +27,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@canva-clone/shared-types": "file:../shared",
+    "@canva-clone/shared-types": "file:../../packages/shared",
     "@openai/agents": "^0.0.7",
     "@pinecone-database/pinecone": "^6.1.0",
     "bcryptjs": "^3.0.2",

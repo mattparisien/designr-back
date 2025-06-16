@@ -13,6 +13,10 @@ const AssetSchema = new Schema<AssetDocument>({
     required: true,
     trim: true
   },
+  description: {
+    type: String,
+    trim: true
+  },
   originalFilename: {
     type: String,
     trim: true
@@ -58,7 +62,6 @@ const AssetSchema = new Schema<AssetDocument>({
   thumbnailCloudinaryId: {
     type: String // Cloudinary public_id for the thumbnail
   },
-
   // Media-specific properties
   width: {
     type: Number // Image/video width
@@ -80,6 +83,14 @@ const AssetSchema = new Schema<AssetDocument>({
   vectorized: {
     type: Boolean,
     default: false // Track if asset has been added to vector store
+  },
+  isAnalyzed: {
+    type: Boolean,
+    default: false // Track if asset has been analyzed
+  },
+  analysisData: {
+    type: mongoose.Schema.Types.Mixed, // Store analysis results like OCR text, image labels, etc.
+    default: {}
   },
   vectorLastUpdated: {
     type: Date // Track when vector was last updated
