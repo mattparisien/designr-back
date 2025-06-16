@@ -3,10 +3,12 @@ import csv from 'csv-parser';
 import fs from 'fs';
 import path from 'path';
 
-
 class CSVProcessingService {
+    private tempDir: string;
+
     constructor() {
-        this.tempDir = path.join(__dirname, '../temp-uploads');
+        // Use a simple temp directory path
+        this.tempDir = path.join(process.cwd(), 'temp-uploads');
         this.ensureTempDir();
     }
 

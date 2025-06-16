@@ -3,7 +3,8 @@ import Asset from '../models/Asset';
 import vectorStoreService from '../services/vectorStore';
 import imageAnalysisService from './imageAnalysisService';
 import imageVectorService from './imageVectorService';
-import pdfProcessingService from './pdfProcessingService';
+// Temporarily commented out due to pdf-parse test file issue
+// import pdfProcessingService from './pdfProcessingService';
 import documentChunkingService from './documentChunkingService';
 import csvProcessingService from './csvProcessingService';
 import csvChunkingService from './csvChunkingService';
@@ -440,6 +441,16 @@ class VectorJobProcessor {
       }
 
       try {
+        // TODO: Temporarily disabled PDF processing due to pdf-parse test file issue
+        console.warn(`PDF processing temporarily disabled for ${asset.name}`);
+        // Mark extraction as temporarily disabled
+        await Asset.findByIdAndUpdate(asset._id, {
+          'metadata.extractionPending': false,
+          'metadata.extractionNote': 'PDF processing temporarily disabled'
+        });
+        return;
+        
+        /* 
         // Initialize PDF processing service if needed
         if (!pdfProcessingService.initialized) {
           await pdfProcessingService.initialize();
@@ -464,6 +475,7 @@ class VectorJobProcessor {
 
         // Queue for vectorization
         this.enqueue('vectorizePDF', asset._id, 'normal');
+        */
 
       } catch (extractionError) {
         console.error(`PDF extraction failed for ${asset.name}:`, extractionError);

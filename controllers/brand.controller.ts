@@ -19,7 +19,7 @@ import User from '../models/User.js';
 const { ObjectId } = mongoose.Types;
 
 // Import JavaScript modules with type annotations
-const { uploadToCloudinary } = require('../utils/cloudinaryUploader') as { uploadToCloudinary: any };
+import { uploadToCloudinary } from '../utils/cloudinaryUploader.js';
 
 // Import shared types
 import type {
@@ -35,10 +35,16 @@ import type {
     UpdateBrandWithAssetResponse
 } from '@canva-clone/shared-types';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// Initialize OpenAI client lazily to avoid early initialization
+let openai: OpenAI | null = null;
+const getOpenAI = () => {
+    if (!openai) {
+        openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY || 'sk-dummy-key'
+        });
+    }
+    return openai;
+};
 
 /**
  * Get all brands for a user
@@ -358,7 +364,8 @@ async function analyzeAssetsWithAI(assets: any[], brandName: string): Promise<an
     };
 
     try {
-        const response = await openai.chat.completions.create({
+        const openaiClient = getOpenAI();
+        const response = await openaiClient.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {

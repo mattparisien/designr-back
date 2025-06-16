@@ -76,6 +76,94 @@ import Asset from '../models/Asset';
 const unlinkAsync = promisify(fs.unlink);
 
 /* -------------------------------------------------------------------------
+ * Configure Multer for file uploads
+ * ------------------------------------------------------------------------- */
+export const configureMulter = () => {
+  // File filter function
+  const fileFilter = (req: any, file: any, cb: any) => {
+    console.log('File upload attempt:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      fieldname: file.fieldname
+    });
+    
+    // Define allowed file extensions
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx|csv)$/i;
+    
+    // Define allowed MIME types (including common generic ones)
+    const allowedMimeTypes = [
+      // Images
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      // Videos
+      'video/mp4', 'video/quicktime', 'video/avi', 'video/webm',
+      // Documents
+      'application/pdf',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // CSV files
+      'text/csv', 'application/csv', 'text/comma-separated-values',
+      // Generic types that browsers sometimes send
+      'application/octet-stream', 'binary/octet-stream'
+    ];
+    
+    const filename = file.originalname.toLowerCase();
+    const hasValidExtension = allowedExtensions.test(filename);
+    const hasValidMimeType = allowedMimeTypes.includes(file.mimetype.toLowerCase());
+    
+    // Allow file if it has a valid extension, regardless of MIME type
+    // This handles cases where browsers send application/octet-stream for images
+    if (hasValidExtension) {
+      console.log('File accepted based on extension:', filename);
+      return cb(null, true);
+    }
+    
+    // Also allow if MIME type is explicitly valid (for properly detected files)
+    if (hasValidMimeType && !file.mimetype.includes('octet-stream')) {
+      console.log('File accepted based on MIME type:', file.mimetype);
+      return cb(null, true);
+    }
+    
+    console.log('File rejected:', {
+      filename,
+      mimetype: file.mimetype,
+      hasValidExtension,
+      hasValidMimeType
+    });
+    
+    cb(new Error(`File type not allowed! Received: ${file.mimetype} for file: ${file.originalname}`), false);
+  };
+  
+  // Set up size limits: 20MB for regular uploads
+  const limits = {
+    fileSize: 20 * 1024 * 1024
+  };
+  
+  // Use disk storage for temporary file storage before uploading to Cloudinary
+  const diskStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      const tempDir = path.join(process.cwd(), 'temp-uploads');
+      // Ensure the directory exists
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      cb(null, tempDir);
+    },
+    filename: function (req, file, cb) {
+      // Generate unique filename
+      const uniqueSuffix = crypto.randomBytes(16).toString('hex');
+      cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+  
+  return multer({ 
+    storage: diskStorage, 
+    fileFilter, 
+    limits 
+  });
+};
+
+/* -------------------------------------------------------------------------
  * Helper — wrap async controller to forward errors to Express error handler
  * ------------------------------------------------------------------------- */
 const asyncHandler = <T extends Request>(fn: (req: T, res: Response) => Promise<void>) =>
