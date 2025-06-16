@@ -217,8 +217,8 @@ export const getAssetById = asyncHandler(async (req: AuthenticatedRequest, res: 
       isAnalyzed: asset.isAnalyzed || false,
       analysisData: asset.analysisData,
       vectorized: asset.vectorized || false,
-      createdAt: asset.createdAt.toISOString(),
-      updatedAt: asset.updatedAt.toISOString()
+      createdAt: asset.createdAt.toString(),
+      updatedAt: asset.updatedAt.toString()
     }
   };
 
@@ -289,7 +289,7 @@ export const uploadAsset = asyncHandler(async (req: AuthenticatedRequest, res: R
       existingAsset: {
         id: existingAsset._id.toString(),
         name: existingAsset.name,
-        createdAt: existingAsset.createdAt.toISOString()
+        createdAt: existingAsset.createdAt.toString()
       }
     };
     res.status(409).json(conflictResponse);
@@ -314,7 +314,7 @@ export const uploadAsset = asyncHandler(async (req: AuthenticatedRequest, res: R
         id: existingHashAsset._id.toString(),
         name: existingHashAsset.name,
         url: existingHashAsset.url,
-        createdAt: existingHashAsset.createdAt.toISOString()
+        createdAt: existingHashAsset.createdAt.toString()
       }
     };
     res.status(409).json(conflictResponse);
@@ -323,7 +323,7 @@ export const uploadAsset = asyncHandler(async (req: AuthenticatedRequest, res: R
 
   try {
     // Upload to Cloudinary
-    const cloudinaryResult = await uploadToCloudinary(req.file.path, {
+    const cloudinaryResult = await uploadToCloudinary(req.file.path, "assets", {
       folder: `assets/${effectiveUserId}`,
       public_id: `${Date.now()}_${req.file.originalname}`,
       resource_type: 'auto'
@@ -379,8 +379,8 @@ export const uploadAsset = asyncHandler(async (req: AuthenticatedRequest, res: R
         isAnalyzed: savedAsset.isAnalyzed || false,
         analysisData: savedAsset.analysisData,
         vectorized: savedAsset.vectorized || false,
-        createdAt: savedAsset.createdAt.toISOString(),
-        updatedAt: savedAsset.updatedAt.toISOString()
+        createdAt: savedAsset.createdAt.toString(),
+        updatedAt: savedAsset.updatedAt.toString()
       }
     };
 
@@ -466,8 +466,8 @@ export const updateAsset = asyncHandler(async (req: AuthenticatedRequest, res: R
       isAnalyzed: asset.isAnalyzed || false,
       analysisData: asset.analysisData,
       vectorized: asset.vectorized || false,
-      createdAt: asset.createdAt.toISOString(),
-      updatedAt: asset.updatedAt.toISOString()
+      createdAt: asset.createdAt.toString(),
+      updatedAt: asset.updatedAt.toString()
     }
   };
 
@@ -638,8 +638,8 @@ export const moveAsset = asyncHandler(async (req: AuthenticatedRequest, res: Res
       isAnalyzed: asset.isAnalyzed || false,
       analysisData: asset.analysisData,
       vectorized: asset.vectorized || false,
-      createdAt: asset.createdAt.toISOString(),
-      updatedAt: asset.updatedAt.toISOString()
+      createdAt: asset.createdAt.toString(),
+      updatedAt: asset.updatedAt.toString()
     }
   };
 
@@ -673,8 +673,10 @@ export const searchAssetsByVector = asyncHandler(async (req: AuthenticatedReques
     const results = await vectorStoreService.searchAssets(
       query as string,
       effectiveUserId,
-      searchLimit,
-      searchThreshold
+      {
+        limit: searchLimit,
+        threshold: searchThreshold
+      }
     );
 
     // Get full asset details for the results
@@ -707,13 +709,13 @@ export const searchAssetsByVector = asyncHandler(async (req: AuthenticatedReques
           isAnalyzed: asset.isAnalyzed || false,
           analysisData: asset.analysisData,
           vectorized: asset.vectorized || false,
-          createdAt: asset.createdAt.toISOString(),
-          updatedAt: asset.updatedAt.toISOString()
+          createdAt: asset.createdAt.toString(),
+          updatedAt: asset.updatedAt.toString()
         },
         score: result.score,
         similarity: result.similarity
       };
-    }).filter(Boolean);
+    }).filter((item): item is NonNullable<typeof item> => item !== null);
 
     const response: SearchAssetsByVectorResponse = {
       success: true,
@@ -799,13 +801,13 @@ export const findSimilarAssets = asyncHandler(async (req: AuthenticatedRequest, 
           isAnalyzed: similarAsset.isAnalyzed || false,
           analysisData: similarAsset.analysisData,
           vectorized: similarAsset.vectorized || false,
-          createdAt: similarAsset.createdAt.toISOString(),
-          updatedAt: similarAsset.updatedAt.toISOString()
+          createdAt: similarAsset.createdAt.toString(),
+          updatedAt: similarAsset.updatedAt.toString()
         },
         score: result.score,
         similarity: result.similarity
       };
-    }).filter(Boolean);
+    }).filter((item): item is NonNullable<typeof item> => item !== null);
 
     const response: FindSimilarAssetsResponse = {
       success: true,
@@ -838,7 +840,7 @@ export const getVectorStats = asyncHandler(async (req: AuthenticatedRequest, res
   const effectiveUserId = (userId as string) || req.userId || 'default-user';
 
   try {
-    const vectorStats = await vectorStoreService.getStats(effectiveUserId);
+    const vectorStats = await vectorStoreService.getStats();
     const totalAssets = await Asset.countDocuments({ userId: effectiveUserId });
     const vectorizedAssets = await Asset.countDocuments({
       userId: effectiveUserId,
@@ -850,8 +852,8 @@ export const getVectorStats = asyncHandler(async (req: AuthenticatedRequest, res
       data: {
         totalAssets,
         vectorizedAssets,
-        pendingJobs: vectorStats.pendingJobs || 0,
-        lastProcessedAt: vectorStats.lastProcessedAt
+        pendingJobs: 0,
+        lastProcessedAt: Date.now().toString()
       }
     };
 

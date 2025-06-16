@@ -7,7 +7,7 @@
  * ➌  All class fields are declared, keeping `strictPropertyInitialization` happy.
  * ------------------------------------------------------------------------- */
 
-import { Pinecone, Index } from '@pinecone-database/pinecone';
+import { Pinecone, Index, IndexStatsDescription } from '@pinecone-database/pinecone';
 import { AssetDocument as Asset } from 'models/Asset';
 import OpenAI from 'openai';
 
@@ -72,9 +72,10 @@ export interface IVectorStoreService {
   addDocumentChunks(chunks: Chunk[], parentAsset: Asset): Promise<void>;
   addDocumentWithChunks(asset: Asset, chunks: Chunk[]): Promise<void>;
   updateAsset(asset: Asset): Promise<void>;
-  removeAsset(assetId: string): Promise<void>;
+  deleteAsset(assetId: string): Promise<void>;
   removeDocumentChunks(assetId: string): Promise<void>;
   searchAssets(query: string, userId: string | null, options?: SearchOptions): Promise<unknown[]>;
+  findSimilarAssets(assetId: string, userId: string | null, limit?: number, threshold?: number): Promise<unknown[]>;
   searchDocumentChunks(query: string, userId: string | null, options?: SearchOptions): Promise<unknown[]>;
   hybridSearch(query: string, userId: string | null, options?: {
     limit?: number;
@@ -235,11 +236,11 @@ export class VectorStoreService implements IVectorStoreService {
   }
 
   async updateAsset(asset: Asset): Promise<void> {
-    await this.removeAsset(asset._id);
+    await this.deleteAsset(asset._id);
     await this.addAsset(asset);
   }
 
-  async removeAsset(assetId: string): Promise<void> {
+  async deleteAsset(assetId: string): Promise<void> {
     if (!this.initialized || !this.index) return;
     await this.index.deleteOne(assetId);
   }
@@ -305,6 +306,45 @@ export class VectorStoreService implements IVectorStoreService {
       .map(m => ({ score: m.score ?? 0, metadata: m.metadata }));
   }
 
+  async findSimilarAssets(assetId: string, userId: string | null, limit: number = 10, threshold: number = 0.7): Promise<unknown[]> {
+    if (!this.initialized || !this.index) return [];
+    
+    try {
+      // Get the vector for the source asset
+      const sourceAssetResponse = await this.index.fetch([`asset-${assetId}`]);
+      const sourceAssetVector = sourceAssetResponse.records[`asset-${assetId}`]?.values;
+      
+      if (!sourceAssetVector) {
+        console.warn(`No vector found for asset ${assetId}`);
+        return [];
+      }
+
+      const filter: Record<string, any> = {};
+      if (userId) filter.userId = { $eq: userId };
+
+      const resp = await this.index.query({ 
+        vector: sourceAssetVector, 
+        topK: limit + 1, // Get one extra to exclude the source asset
+        includeMetadata: true, 
+        filter 
+      });
+      
+      return resp.matches
+        .filter(m => m.id !== `asset-${assetId}`) // Exclude the source asset
+        .filter(m => (m.score ?? 0) >= threshold)
+        .slice(0, limit) // Limit results after filtering
+        .map(m => ({ 
+          id: m.id?.replace('asset-', ''), 
+          score: m.score ?? 0, 
+          similarity: m.score ?? 0,
+          metadata: m.metadata 
+        }));
+    } catch (error) {
+      console.error('Error finding similar assets:', error);
+      return [];
+    }
+  }
+
   async searchDocumentChunks(query: string, userId: string | null, opts: SearchOptions = {}): Promise<unknown[]> {
     const { assetId, ...rest } = opts;
     const baseFilter: Record<string, any> = { type: { $eq: 'document_chunk' } };
@@ -322,7 +362,9 @@ export class VectorStoreService implements IVectorStoreService {
     return null;
   }
 
-  async getStats(): Promise<unknown> {
+  async getStats(): Promise<IndexStatsDescription & {
+    available: boolean;
+  }> {
     if (!this.initialized || !this.index) return { available: false };
     const s = await this.index.describeIndexStats();
     return { available: true, ...s };
@@ -336,4 +378,4 @@ export class VectorStoreService implements IVectorStoreService {
 /* -------------------------------------------------------------------------
  * Export singleton
  * ------------------------------------------------------------------------- */
-export const vectorStoreService = new VectorStoreService();
+export default new VectorStoreService();
