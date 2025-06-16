@@ -3,7 +3,7 @@ import { Page, Element } from "@canva-clone/shared-types";
 import mongoose from "mongoose";
 const { Schema, model, Document } = mongoose;
 
-type ProjectDocument = Project;
+export interface ProjectDocument extends Omit<Project, 'id'>, Document {}
 
 // Define the schema for individual elements in a project
 const ElementSchema = new Schema<Element>({

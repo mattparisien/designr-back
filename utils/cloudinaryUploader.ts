@@ -10,7 +10,7 @@ const unlinkAsync = promisify(fs.unlink);
  * @param {object} options - Additional Cloudinary upload options
  * @returns {Promise<object>} - Cloudinary upload result
  */
-const uploadToCloudinary = async (filePath, folder = 'assets', options = {}) => {
+const uploadToCloudinary = async (filePath: string, folder = 'assets', options = {}) => {
   try {
     // Set default options
     const uploadOptions = {

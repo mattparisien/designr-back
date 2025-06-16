@@ -1,11 +1,9 @@
 import { Asset } from '@canva-clone/shared-types/dist/models/asset';
-import mongoose from 'mongoose';
-const { Schema, model, Document } = mongoose;
+import { Schema, model, Document} from 'mongoose';
 
-export interface AssetDocument
-  extends Asset,
-  Document {
-}
+
+/** Combine DTO fields (except `id`) with Mongoose helpers */
+export interface AssetDocument extends Omit<Asset, 'id'>, Document {}
 
 const AssetSchema = new Schema<AssetDocument>({
   name: {
@@ -26,7 +24,7 @@ const AssetSchema = new Schema<AssetDocument>({
     required: true
   },
   folderId: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: Schema.Types.ObjectId,
     ref: 'Folder',
     default: null // null means it's in the root directory
   },
@@ -54,7 +52,7 @@ const AssetSchema = new Schema<AssetDocument>({
     type: String // Full Cloudinary URL for the asset
   },
   gridFsId: {
-    type: mongoose.Schema.Types.ObjectId // GridFS file ID if using GridFS for storage
+    type: Schema.Types.ObjectId // GridFS file ID if using GridFS for storage
   },
   thumbnail: {
     type: String // URL to thumbnail for images/videos
@@ -73,7 +71,7 @@ const AssetSchema = new Schema<AssetDocument>({
     type: Number // Video/audio duration in seconds
   },
   metadata: {
-    type: mongoose.Schema.Types.Mixed,
+    type: Schema.Types.Mixed,
     default: {} // Store additional info like image dimensions, duration, etc.
   },
   tags: [{
@@ -89,7 +87,7 @@ const AssetSchema = new Schema<AssetDocument>({
     default: false // Track if asset has been analyzed
   },
   analysisData: {
-    type: mongoose.Schema.Types.Mixed, // Store analysis results like OCR text, image labels, etc.
+    type: Schema.Types.Mixed, // Store analysis results like OCR text, image labels, etc.
     default: {}
   },
   vectorLastUpdated: {
@@ -106,4 +104,4 @@ AssetSchema.index({ type: 1 });
 // Index for text search
 AssetSchema.index({ name: 'text', tags: 'text' });
 
-export default mongoose.model('Asset', AssetSchema);
+export default model('Asset', AssetSchema);
