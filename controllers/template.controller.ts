@@ -3,7 +3,17 @@ import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
 import Template from "../models/Template";
 import Project from "../models/Project";
-// import { Template } from '@canva-clone/shared-types/dist/models/project';
+import { Template as TemplateInterface } from '@canva-clone/shared-types/dist/models/project';
+
+// Helper function to convert mongoose document to Template interface
+const convertToTemplate = (doc: any): TemplateInterface => {
+  const obj = doc.toObject();
+  const { _id, ...rest } = obj;
+  return {
+    ...rest,
+    id: _id.toString()
+  };
+};
 
 
 // Import shared types
@@ -53,8 +63,11 @@ export const getTemplates = asyncHandler(async (req: Request, res: Response): Pr
     Template.countDocuments(filter)
   ]);
 
+  // Convert mongoose documents to Template interface objects
+  const templateList = templates.map(convertToTemplate);
+
   const response: TemplateListResponse = {
-    templates,
+    templates: templateList,
     total,
     page: pageNum,
     pageSize: pageSizeNum
@@ -73,8 +86,11 @@ export const getTemplateById = asyncHandler(async (req: Request<{ id: string }>,
     return;
   }
 
+  // Convert mongoose document to Template interface object
+  const templateObj = convertToTemplate(template);
+
   const response: TemplateResponse = {
-    template,
+    template: templateObj,
     etag: template.updatedAt.toString()
   };
 
@@ -99,9 +115,12 @@ export const createTemplate = asyncHandler(async (req: Request<{}, {}, CreateTem
   const newTemplate = new Template(templateData);
   const savedTemplate = await newTemplate.save();
 
+  // Convert mongoose document to Template interface object
+  const templateObj = convertToTemplate(savedTemplate);
+
   const response: CreateTemplateResponse = {
     success: true,
-    template: savedTemplate,
+    template: templateObj,
     id: savedTemplate._id as TemplateId
   };
 
@@ -124,9 +143,12 @@ export const updateTemplate = asyncHandler(async (req: Request<{ id: string }, {
     return;
   }
 
+  // Convert mongoose document to Template interface object
+  const templateObj = convertToTemplate(template);
+
   const response: UpdateTemplateResponse = {
     success: true,
-    template,
+    template: templateObj,
     etag: template.updatedAt.toString()
   };
 
@@ -241,9 +263,12 @@ export const createTemplateFromProject = asyncHandler(async (req: Request<{ proj
   const newTemplate = new Template(templateData);
   const savedTemplate = await newTemplate.save();
 
+  // Convert mongoose document to Template interface object
+  const templateObj = convertToTemplate(savedTemplate);
+
   const response: CreateTemplateResponse = {
     success: true,
-    template: savedTemplate,
+    template: templateObj,
     id: savedTemplate._id as TemplateId
   };
 
@@ -257,8 +282,11 @@ export const getFeaturedTemplates = asyncHandler(async (req: Request, res: Respo
     .sort({ updatedAt: -1 })
     .limit(10);
 
+  // Convert mongoose documents to Template interface objects
+  const templateList = templates.map(convertToTemplate);
+
   const response: FeaturedTemplatesResponse = {
-    templates,
+    templates: templateList,
     total: templates.length
   };
 
@@ -272,8 +300,11 @@ export const getPopularTemplates = asyncHandler(async (req: Request, res: Respon
     .sort({ updatedAt: -1 })
     .limit(10);
 
+  // Convert mongoose documents to Template interface objects
+  const templateList = templates.map(convertToTemplate);
+
   const response: PopularTemplatesResponse = {
-    templates,
+    templates: templateList,
     total: templates.length
   };
 
@@ -288,8 +319,11 @@ export const getTemplatesByCategory = asyncHandler(async (req: Request<{ categor
     .select('title type category thumbnail previewImages tags featured popular dimensions createdAt updatedAt')
     .sort({ updatedAt: -1 });
 
+  // Convert mongoose documents to Template interface objects
+  const templateList = templates.map(convertToTemplate);
+
   const response: CategoryTemplatesResponse = {
-    templates,
+    templates: templateList,
     category,
     total: templates.length
   };
