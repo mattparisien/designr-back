@@ -50,7 +50,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 import assetRoutes from './routes/assets.js';
 import brandRoutes from './routes/brands.js'; // Import brand routes
 import chatRoutes from './routes/chat.js'; // Import chat routes
-import folderRoutes from './routes/folders.js';
+// import folderRoutes from './routes/folders.js';
 import templateRoutes from './routes/templates.js'; // Import template routes
 
 // Routes
@@ -58,7 +58,7 @@ import templateRoutes from './routes/templates.js'; // Import template routes
 // app.use('/api/auth', authRoutes);
 // app.use('/api/presentations', presentationRoutes);
 // app.use('/api/users', userRoutes); // Use user routes
-app.use('/api/folders', folderRoutes);
+// app.use('/api/folders', folderRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/templates', templateRoutes); // Use template routes
 app.use('/api/brands', brandRoutes); // Use brand routes

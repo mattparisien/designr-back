@@ -16,7 +16,7 @@ async function initializeService() {
 }
 
 // Health check endpoint
-exports.healthCheck = async (req, res) => {
+export const healthCheck = async (req, res) => {
   try {
     const service = await initializeService();
     res.json({ 
@@ -34,7 +34,7 @@ exports.healthCheck = async (req, res) => {
 };
 
 // Send message endpoint
-exports.sendMessage = async (req, res) => {
+export const sendMessage = async (req, res) => {
   try {
     const { message, userId = 'anonymous-user', chatId } = req.body;
 
@@ -100,7 +100,7 @@ exports.sendMessage = async (req, res) => {
 };
 
 // Get user's chat conversations
-exports.getUserChats = async (req, res) => {
+export const getUserChats = async (req, res) => {
   try {
     const { userId } = req.params;
     const { limit = 10 } = req.query;
@@ -129,7 +129,7 @@ exports.getUserChats = async (req, res) => {
 };
 
 // Get specific chat conversation with full message history
-exports.getChatById = async (req, res) => {
+export const getChatById = async (req, res) => {
   try {
     const { chatId } = req.params;
     const { userId } = req.query;
@@ -177,7 +177,7 @@ exports.getChatById = async (req, res) => {
 };
 
 // Create a new chat conversation
-exports.createNewChat = async (req, res) => {
+export const createNewChat = async (req, res) => {
   try {
     const { userId, title = 'New Conversation' } = req.body;
 
@@ -223,7 +223,7 @@ exports.createNewChat = async (req, res) => {
 };
 
 // Delete a chat conversation
-exports.deleteChat = async (req, res) => {
+export const deleteChat = async (req, res) => {
   try {
     const { chatId } = req.params;
     const { userId } = req.body;
@@ -266,7 +266,7 @@ exports.deleteChat = async (req, res) => {
 };
 
 // Update chat title
-exports.updateChatTitle = async (req, res) => {
+export const updateChatTitle = async (req, res) => {
   try {
     const { chatId } = req.params;
     const { title, userId } = req.body;

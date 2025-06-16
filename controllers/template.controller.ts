@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
 
-// Import JavaScript modules using require
-const asyncHandler = require('express-async-handler');
-const Template = require('../models/Template');
-const Project = require('../models/Project');
+import asyncHandler from 'express-async-handler';
+import Template from "../models/Template";
+import Project from "../models/Project";
+// import { Template } from '@canva-clone/shared-types/dist/models/project';
+
 
 // Import shared types
 import type {
@@ -74,7 +75,7 @@ export const getTemplateById = asyncHandler(async (req: Request<{ id: string }>,
 
   const response: TemplateResponse = {
     template,
-    etag: template.updatedAt.toISOString()
+    etag: template.updatedAt.toString()
   };
 
   res.status(200).json(response);
@@ -126,7 +127,7 @@ export const updateTemplate = asyncHandler(async (req: Request<{ id: string }, {
   const response: UpdateTemplateResponse = {
     success: true,
     template,
-    etag: template.updatedAt.toISOString()
+    etag: template.updatedAt.toString()
   };
 
   res.status(200).json(response);
@@ -172,11 +173,8 @@ export const useTemplate = asyncHandler(async (req: Request<{ id: string }, {}, 
   const projectData = {
     title: projectTitle || `${template.title} (from template)`,
     description: template.description,
-    type: template.type,
     userId: userId,
-    dimensions: template.dimensions,
     pages: template.pages,
-    category: template.category,
     tags: template.tags,
     starred: false,
     shared: false,
@@ -190,9 +188,16 @@ export const useTemplate = asyncHandler(async (req: Request<{ id: string }, {}, 
   const newProject = new Project(projectData);
   const savedProject = await newProject.save();
 
+  // Convert mongoose document to plain object for response
+  const projectForResponse = {
+    ...savedProject.toObject(),
+    id: savedProject._id.toString(),
+    isTemplate: false
+  };
+
   const response: UseTemplateResponse = {
     success: true,
-    project: savedProject,
+    project: projectForResponse as any, // Type assertion to handle interface mismatch
     templateId: id as TemplateId
   };
 
@@ -225,10 +230,8 @@ export const createTemplateFromProject = asyncHandler(async (req: Request<{ proj
   const templateData = {
     title: title || project.title,
     description: description || project.description,
-    type: project.type,
     category: category,
     author: author,
-    dimensions: project.dimensions,
     pages: project.pages,
     thumbnail: project.thumbnail,
     tags: tags || project.tags || []

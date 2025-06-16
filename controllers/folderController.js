@@ -1,5 +1,5 @@
-const Folder = require('../models/Folder');
-const Asset = require('../models/Asset');
+import Folder from '../models/Folder.js';
+import Asset from '../models/Asset.js';
 
 
 // Get all folders for a user (with optional parent folder filtering)
