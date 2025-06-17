@@ -15,7 +15,9 @@
     "test:agent": "node --experimental-vm-modules ./node_modules/.bin/jest --testPathPattern=tests/agent --verbose",
     "test:agent:watch": "node --experimental-vm-modules ./node_modules/.bin/jest --testPathPattern=tests/agent --watch",
     "test:agent:coverage": "node --experimental-vm-modules ./node_modules/.bin/jest --testPathPattern=tests/agent --coverage --collectCoverageFrom=agent/**/*.js --collectCoverageFrom=services/projectAgentService.js",
-    "test:agent:run": "node tests/agent/runTests.js",
+    "test:agent:run": "node tests/agent/demo-workflow.js",
+    "test:agent:simple": "node tests/agent/simple-integration-test.js",
+    "test:agent:ts": "tsx tests/agent/index.ts",
     "vector": "node scripts/vector-manager.js",
     "fix-folders": "node scripts/fix-root-folders.js"
   },

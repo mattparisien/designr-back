@@ -1,7 +1,7 @@
 // agent/config/forbiddenTopics.js
 // Topics that the project assistant should avoid
 
-const FORBIDDEN_TOPICS = [
+const FORBIDDEN_TOPICS : string[] = [
   'politics',
   'election',
   'covid',
@@ -18,4 +18,4 @@ const FORBIDDEN_TOPICS = [
   'private data',
 ];
 
-module.exports = FORBIDDEN_TOPICS;
+export default FORBIDDEN_TOPICS;

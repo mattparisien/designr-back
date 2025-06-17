@@ -1,7 +1,17 @@
-// agent/config/platformSizes.js
+// agent/config/platformSizes.ts
 // Platform-specific canvas dimensions for social media projects
 
-const platformSizes = {
+interface PlatformSize {
+  name: string;
+  width: number;
+  height: number;
+}
+
+interface PlatformSizes {
+  [key: string]: PlatformSize;
+}
+
+const platformSizes: PlatformSizes = {
   'instagram-post': { name: "Instagram Post", width: 1080, height: 1080 },
   'instagram-story': { name: "Instagram Story", width: 1080, height: 1920 },
   'facebook-post': { name: "Facebook Post", width: 1200, height: 630 },
@@ -11,4 +21,4 @@ const platformSizes = {
   'tiktok-video': { name: "TikTok Video", width: 1080, height: 1920 }
 };
 
-module.exports = platformSizes;
+export default platformSizes;

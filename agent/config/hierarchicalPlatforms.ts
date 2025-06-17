@@ -1,8 +1,31 @@
 // Updated platform sizes configuration using hierarchical types
-// agent/config/hierarchicalPlatforms.js
 
-// Legacy platform sizes for backward compatibility
-const legacyPlatformSizes = {
+/* ------------------------------------------------------------------ *
+ * Types                                                              *
+ * ------------------------------------------------------------------ */
+interface PlatformSize {
+  name: string;
+  width: number;
+  height: number;
+  aspectRatio?: string;
+}
+
+interface PlatformCategory {
+  [format: string]: PlatformSize;
+}
+
+interface MainTypeCategory {
+  [platform: string]: PlatformCategory | PlatformSize;
+}
+
+interface HierarchicalPlatforms {
+  [mainType: string]: MainTypeCategory;
+}
+
+/* ------------------------------------------------------------------ *
+ * Legacy platform sizes for backward compatibility                  *
+ * ------------------------------------------------------------------ */
+const legacyPlatformSizes: Record<string, PlatformSize> = {
   'instagram-post': { name: "Instagram Post", width: 1080, height: 1080 },
   'instagram-story': { name: "Instagram Story", width: 1080, height: 1920 },
   'facebook-post': { name: "Facebook Post", width: 1200, height: 630 },
@@ -12,8 +35,10 @@ const legacyPlatformSizes = {
   'tiktok-video': { name: "TikTok Video", width: 1080, height: 1920 }
 };
 
-// New hierarchical platform configuration
-const hierarchicalPlatforms = {
+/* ------------------------------------------------------------------ *
+ * New hierarchical platform configuration                           *
+ * ------------------------------------------------------------------ */
+const hierarchicalPlatforms: HierarchicalPlatforms = {
   social: {
     instagram: {
       post: { name: "Instagram Post", width: 1080, height: 1080, aspectRatio: '1:1' },
@@ -67,19 +92,30 @@ const hierarchicalPlatforms = {
   },
 };
 
+/* ------------------------------------------------------------------ *
+ * Functions                                                          *
+ * ------------------------------------------------------------------ */
+
 /**
  * Get platform dimensions using hierarchical lookup
- * @param {string} mainType - Main design type (social, presentation, print)
- * @param {string} platform - Platform/category (instagram, facebook, document, etc.)
- * @param {string} format - Specific format (post, story, a4, etc.)
- * @returns {Object} Canvas dimensions
+ * @param mainType - Main design type (social, presentation, print)
+ * @param platform - Platform/category (instagram, facebook, document, etc.)
+ * @param format - Specific format (post, story, a4, etc.)
+ * @returns Canvas dimensions
  */
-function getHierarchicalDimensions(mainType, platform, format) {
+export function getHierarchicalDimensions(mainType: string, platform: string, format: string): PlatformSize {
   try {
-    if (hierarchicalPlatforms[mainType] && 
-        hierarchicalPlatforms[mainType][platform] && 
-        hierarchicalPlatforms[mainType][platform][format]) {
-      return hierarchicalPlatforms[mainType][platform][format];
+    const mainTypeObj = hierarchicalPlatforms[mainType];
+    if (mainTypeObj && mainTypeObj[platform]) {
+      const platformObj = mainTypeObj[platform];
+      // Check if it's a PlatformCategory (has nested formats) or direct PlatformSize
+      if ((platformObj as PlatformCategory)[format]) {
+        return (platformObj as PlatformCategory)[format];
+      }
+      // If it's a direct PlatformSize (like presentation.widescreen)
+      if ((platformObj as PlatformSize).name && format === platform) {
+        return platformObj as PlatformSize;
+      }
     }
   } catch (error) {
     console.warn('Error in hierarchical lookup:', error);
@@ -91,10 +127,10 @@ function getHierarchicalDimensions(mainType, platform, format) {
 
 /**
  * Get platform dimensions with legacy compatibility
- * @param {string} platformKey - Platform key (legacy or hierarchical)
- * @returns {Object} Canvas dimensions
+ * @param platformKey - Platform key (legacy or hierarchical)
+ * @returns Canvas dimensions
  */
-function getPlatformDimensions(platformKey) {
+export function getPlatformDimensions(platformKey: string): PlatformSize {
   // Check if it's a legacy platform key
   if (legacyPlatformSizes[platformKey]) {
     return legacyPlatformSizes[platformKey];
@@ -112,10 +148,10 @@ function getPlatformDimensions(platformKey) {
 
 /**
  * Get all available platforms for a main type
- * @param {string} mainType - Main design type
- * @returns {Array} Available platforms
+ * @param mainType - Main design type
+ * @returns Available platforms
  */
-function getAvailablePlatforms(mainType) {
+export function getAvailablePlatforms(mainType: string): string[] {
   if (hierarchicalPlatforms[mainType]) {
     return Object.keys(hierarchicalPlatforms[mainType]);
   }
@@ -124,18 +160,36 @@ function getAvailablePlatforms(mainType) {
 
 /**
  * Get all available formats for a platform
- * @param {string} mainType - Main design type
- * @param {string} platform - Platform name
- * @returns {Array} Available formats
+ * @param mainType - Main design type
+ * @param platform - Platform name
+ * @returns Available formats
  */
-function getAvailableFormats(mainType, platform) {
-  if (hierarchicalPlatforms[mainType] && hierarchicalPlatforms[mainType][platform]) {
-    return Object.keys(hierarchicalPlatforms[mainType][platform]);
+export function getAvailableFormats(mainType: string, platform: string): string[] {
+  const mainTypeObj = hierarchicalPlatforms[mainType];
+  if (mainTypeObj && mainTypeObj[platform]) {
+    const platformObj = mainTypeObj[platform];
+    // Check if it's a PlatformCategory (has nested formats)
+    if ((platformObj as PlatformCategory) && typeof platformObj === 'object' && !(platformObj as PlatformSize).name) {
+      return Object.keys(platformObj as PlatformCategory);
+    }
+    // If it's a direct PlatformSize, return the platform name as the format
+    if ((platformObj as PlatformSize).name) {
+      return [platform];
+    }
   }
   return [];
 }
 
-module.exports = {
+/* ------------------------------------------------------------------ *
+ * Exports                                                            *
+ * ------------------------------------------------------------------ */
+export {
+  hierarchicalPlatforms,
+  legacyPlatformSizes
+};
+
+// Legacy default export for backward compatibility
+const legacyExports = {
   // Legacy export for backward compatibility
   ...legacyPlatformSizes,
   
@@ -147,3 +201,5 @@ module.exports = {
   hierarchicalPlatforms,
   legacyPlatformSizes
 };
+
+export default legacyExports;

@@ -1,7 +1,13 @@
-// utils/fetchJson.js
+// utils/fetchJson.ts
 // Thin wrapper around fetch with uniform error handling
 
-async function fetchJson(url, options = {}) {
+interface FetchOptions {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: any;
+}
+
+export async function fetchJson(url: string, options: FetchOptions = {}): Promise<any> {
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
   
@@ -47,5 +53,3 @@ async function fetchJson(url, options = {}) {
     throw error;
   }
 }
-
-module.exports = { fetchJson };
