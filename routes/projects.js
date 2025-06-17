@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import * as projectController from '../controllers/project.controller.js';
+
 const router = express.Router();
-const projectController = require('../controllers/project.controller');
 
 // GET all projects (with optional filtering)
 router.get('/', projectController.getProjects);
@@ -32,4 +33,4 @@ router.delete('/:id', projectController.deleteProject);
 // POST clone project
 router.post('/:id/clone', projectController.cloneProject);
 
-module.exports = router;
+export default router;

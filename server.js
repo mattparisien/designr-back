@@ -43,7 +43,7 @@ app.use(morgan('dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Import routes
-// const projectRoutes = require('./routes/projects');  // Temporarily disabled
+import projectRoutes from './routes/projects.js'; // Import project routes
 // import authRoutes from './routes/auth.js';
 // import presentationRoutes from './routes/presentations.js';
 // import userRoutes from './routes/userRoutes.js'; // Import user routes
@@ -54,7 +54,7 @@ import chatRoutes from './routes/chat.js'; // Import chat routes
 import templateRoutes from './routes/templates.js'; // Import template routes
 
 // Routes
-// app.use('/api/projects', projectRoutes);  // Temporarily disabled due to function mismatch
+app.use('/api/projects', projectRoutes); // Use project routes
 // app.use('/api/auth', authRoutes);
 // app.use('/api/presentations', presentationRoutes);
 // app.use('/api/users', userRoutes); // Use user routes
