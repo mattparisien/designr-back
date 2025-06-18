@@ -188,11 +188,11 @@ export const getProject = asyncHandler(async (req: Request<{ id: string }>, res)
  * POST /v1/projects
  * ------------------------------------------------------------------------- */
 export const createProject = asyncHandler<Request<{}, any, CreateProjectRequest>>(async (req, res) => {
-    const { title, kind, pages = [], thumbnail } = req.body;
+    const { title, type, pages = [], thumbnail } = req.body;
 
     const project = new Project({
         title,
-        kind,
+        type,
         pages,
         thumbnail,
     });

@@ -1,13 +1,10 @@
 // agent/index.ts — Responses-API implementation (no Agents SDK)
 import dotenv from 'dotenv';
 import fetch from "node-fetch";
+import { IVectorStoreService } from 'services/vectorStore';
+import { AgentConfig } from "./executors"
+import { createExecutors } from './executors';
 dotenv.config();
-import { fetchJson } from "../utils/fetchJson";
-import platformSizes from './config/platformSizes.js';
-import { getHierarchicalDimensions } from './config/hierarchicalPlatforms.js';
-import { Project } from '@canva-clone/shared-types/dist/models/project';
-import { DesignSlug, getPreset } from '@canva-clone/shared-types';
-import { Page } from '@canva-clone/shared-types';
 
 /* ------------------------------------------------------------------ *
  * 0.  Types                                                          *
@@ -36,14 +33,6 @@ interface ProjectData {
   format: string;
 }
 
-interface SearchAssetsParams {
-  search: string;
-}
-
-interface SearchDocsParams {
-  search: string;
-}
-
 interface CreateSocialMediaProjectParams {
   title: string;
   platform: string;
@@ -51,17 +40,14 @@ interface CreateSocialMediaProjectParams {
   category?: string;
 }
 
-interface VectorStore {
-  search?: (query: string) => any[];
-}
-
 interface ImageAnalysis {
   // Define image analysis interface as needed
 }
 
-interface AgentConfig {
-  vectorStore?: VectorStore;
-  imageAnalysis?: ImageAnalysis;
+
+
+export interface Agent {
+  run: (prompt: string) => Promise<AssistantResponse>;
 }
 
 interface OpenAIResponse {
@@ -167,67 +153,7 @@ const TOOL_DEFS = [
   }
 ];
 
-// Simple executors that work with the tools
-function createExecutors({ vectorStore = {}, imageAnalysis = {} }: AgentConfig) {
-  return {
-    search_assets: async ({ search }: SearchAssetsParams) => {
-      const results = vectorStore.search?.(search) ?? [];
-      return { results, count: results.length };
-    },
 
-    search_docs: async ({ search }: SearchDocsParams) => {
-      const results = vectorStore.search?.(search) ?? [];
-      return { results, count: results.length };
-    },
-
-    create_social_media_project: async ({ title, platform, format = 'post', category = 'personal' }: CreateSocialMediaProjectParams) => {
-      // Ensure category is valid
-      const validCategories = ['marketing', 'education', 'events', 'personal', 'other'];
-      const cat = validCategories.includes(category) ? category : 'other';
-      // Build project payload similar to createSocialMedia.js
-      let canvasSize, designSpec;
-      if (format) {
-        const preset = getPreset(`social.${platform}.${format}` as DesignSlug);
-        canvasSize = getHierarchicalDimensions('social', platform, format);
-        designSpec = { mainType: 'social', platform, format, dimensions: canvasSize };
-      } else if (platformSizes[platform]) {
-        canvasSize = platformSizes[platform];
-        const [plat, fmt] = platform.split('-');
-        designSpec = { mainType: 'social', platform: plat, format: fmt || 'post', dimensions: canvasSize };
-      } else {
-        throw new Error(`Unsupported platform: ${platform}`);
-      }
-      const projectData = {
-        title,
-        description: `Optimized for ${designSpec.platform} ${designSpec.format}`,
-        type: 'social',
-        userId: 'default-user',
-        category: cat,
-        canvasSize,
-        designSpec,
-        mainType: 'social',
-        platform: designSpec.platform,
-        format: designSpec.format
-      };
-      // create project via backend API
-      const project = await fetchJson('/api/projects', { method: 'POST', body: projectData });
-      return {
-        success: true,
-        project: {
-          id: project._id,
-          title: project.title,
-          type: project.type,
-          category: project.category,
-          platform: designSpec.platform,
-          format: designSpec.format,
-          canvasSize: project.canvasSize,
-          designSpec: project.designSpec
-        },
-        message: `Created "${title}" for ${designSpec.platform} ${designSpec.format} successfully!`
-      };
-    }
-  };
-}
 
 /* ------------------------------------------------------------------ *
  * 2.  Helper: single Responses-API call                              *
@@ -334,7 +260,7 @@ async function runAssistant(prompt: string, { vectorStore = {}, imageAnalysis = 
 /* ------------------------------------------------------------------ *
  * 4.  Public factory                                                 *
  * ------------------------------------------------------------------ */
-function buildAgent({ vectorStore = {}, imageAnalysis = {} }: AgentConfig = {}) {
+function buildAgent({ vectorStore = {}, imageAnalysis = {} }: AgentConfig = {}): Agent {
   return {
     run: (prompt: string) => runAssistant(prompt, { vectorStore, imageAnalysis }),
   };

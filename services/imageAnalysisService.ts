@@ -1,246 +1,210 @@
-
+// src/services/ImageAnalysisService.ts
 import fs from 'fs';
-import OpenAI from 'openai';
 import path from 'path';
+import OpenAI, { ClientOptions } from 'openai';
+import { ChatCompletion } from 'openai/resources/chat';
 
+/* ------------------------------------------------------------------ *
+ *  Types                                                             *
+ * ------------------------------------------------------------------ */
 
-class ImageAnalysisService {
-  constructor() {
-    this.openai = null;
-    this.initialized = false;
-  }
+export interface AnalysisResult {
+  description: string;
+  objects: string[];
+  colors: string[];
+  themes: string[];
+  mood: string;
+  style: string;
+  text: string;
+  categories: string[];
+  composition: string;
+  lighting: string;
+  setting: string;
+}
 
-  async initialize() {
+export interface IImageAnalysisService {
+  initialize(): Promise<void>;
+  analyzeImage(imageUrl: string): Promise<AnalysisResult | null>;
+  analyzeLocalImage(filePath: string): Promise<AnalysisResult | null>;
+  createSearchableText(analysis: AnalysisResult | null): string;
+  extractColorPalette(analysis: AnalysisResult | null): string[];
+  extractThemesAndCategories(
+    analysis: AnalysisResult | null
+  ): { themes: string[]; categories: string[] };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Service                                                           *
+ * ------------------------------------------------------------------ */
+
+class ImageAnalysisService implements IImageAnalysisService {
+  private openai: OpenAI | null = null;
+  private initialized = false;
+
+  /** Call once on app bootstrap */
+  public async initialize(): Promise<void> {
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('OpenAI API key not found. Image analysis will be disabled.');
+      return;
+    }
+
     try {
-      if (!process.env.OPENAI_API_KEY) {
-        console.warn('OpenAI API key not found. Image analysis will be disabled.');
-        return;
-      }
-
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY
-      });
-
+      const opts: ClientOptions = { apiKey: process.env.OPENAI_API_KEY };
+      this.openai = new OpenAI(opts);
       this.initialized = true;
-      console.log('Image analysis service initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize image analysis service:', error);
+      console.log('✅ Image analysis service initialized');
+    } catch (err) {
+      console.error('Failed to initialize image analysis service:', err);
     }
   }
 
   /**
-   * Analyze image content using OpenAI Vision API
-   * @param {string} imageUrl - URL of the image to analyze
-   * @returns {Object} Analysis results containing description, objects, colors, themes, etc.
+   * Analyze a remote or data-URL image with GPT-4o-mini vision
    */
-  async analyzeImage(imageUrl) {
+  public async analyzeImage(imageUrl: string): Promise<AnalysisResult | null> {
     if (!this.initialized || !this.openai) {
       console.warn('Image analysis service not available');
       return null;
     }
 
     try {
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini", // Using gpt-4o-mini for vision capabilities
+      const completion: ChatCompletion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: 1_000,
         messages: [
           {
-            role: "user",
+            role: 'user',
             content: [
               {
-                type: "text",
-                text: `Please analyze this image and provide detailed information about its visual content. Return a JSON object with the following structure:
+                type: 'text',
+                text: `Please analyze this image and provide detailed information about its visual content. Return a JSON object with the following structure (no markdown):
+
 {
-  "description": "A detailed description of what's in the image",
-  "objects": ["list", "of", "detected", "objects"],
-  "colors": ["dominant", "color", "names"],
-  "themes": ["visual", "themes", "or", "concepts"],
-  "mood": "overall mood or atmosphere",
-  "style": "artistic style or visual characteristics",
-  "text": "any text visible in the image",
-  "categories": ["broader", "category", "classifications"],
-  "composition": "description of layout and composition",
-  "lighting": "description of lighting conditions",
-  "setting": "location or environment if identifiable"
+  "description": "",
+  "objects": [],
+  "colors": [],
+  "themes": [],
+  "mood": "",
+  "style": "",
+  "text": "",
+  "categories": [],
+  "composition": "",
+  "lighting": "",
+  "setting": ""
 }
 
-Focus on providing keywords and descriptions that would be useful for semantic search. Be specific about objects, colors, and visual elements.`
+Focus on keywords and visual details useful for semantic search.`,
               },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageUrl,
-                  detail: "high"
-                }
-              }
-            ]
-          }
+              { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } },
+            ],
+          },
         ],
-        max_tokens: 1000,
-        temperature: 0.3 // Lower temperature for more consistent results
       });
 
-      const analysisText = response.choices[0].message.content;
+      const raw = completion.choices[0].message?.content ?? '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      const parsed: Partial<AnalysisResult> =
+        jsonMatch && jsonMatch[0] ? JSON.parse(jsonMatch[0]) : { description: raw };
 
-      // Try to parse the JSON response
-      let analysis;
-      try {
-        // Extract JSON from the response (in case there's extra text)
-        const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          analysis = JSON.parse(jsonMatch[0]);
-        } else {
-          // Fallback if no JSON structure is found
-          analysis = {
-            description: analysisText,
-            objects: [],
-            colors: [],
-            themes: [],
-            mood: "",
-            style: "",
-            text: "",
-            categories: [],
-            composition: "",
-            lighting: "",
-            setting: ""
-          };
-        }
-      } catch (parseError) {
-        console.warn('Failed to parse AI analysis as JSON, using raw text:', parseError);
-        analysis = {
-          description: analysisText,
-          objects: [],
-          colors: [],
-          themes: [],
-          mood: "",
-          style: "",
-          text: "",
-          categories: [],
-          composition: "",
-          lighting: "",
-          setting: ""
-        };
-      }
-
-      // Ensure all expected fields exist
-      const defaultAnalysis = {
-        description: "",
+      const result: AnalysisResult = {
+        description: '',
         objects: [],
         colors: [],
         themes: [],
-        mood: "",
-        style: "",
-        text: "",
+        mood: '',
+        style: '',
+        text: '',
         categories: [],
-        composition: "",
-        lighting: "",
-        setting: ""
+        composition: '',
+        lighting: '',
+        setting: '',
+        ...parsed,
       };
 
-      return { ...defaultAnalysis, ...analysis };
-
-    } catch (error) {
-      console.error('Error analyzing image:', error);
+      return result;
+    } catch (err) {
+      console.error('Error analyzing image:', err);
       return null;
     }
   }
 
   /**
-   * Analyze image from local file path
-   * @param {string} filePath - Local path to the image file
-   * @returns {Object} Analysis results
+   * Analyze a local image file by absolute or relative path
    */
-  async analyzeLocalImage(filePath) {
+  public async analyzeLocalImage(filePath: string): Promise<AnalysisResult | null> {
     if (!this.initialized || !this.openai) {
       console.warn('Image analysis service not available');
       return null;
     }
 
     try {
-      // Read the image file and convert to base64
-      const imageBuffer = fs.readFileSync(filePath);
-      const base64Image = imageBuffer.toString('base64');
-      const mimeType = this.getMimeTypeFromFile(filePath);
-
-      const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-      return await this.analyzeImage(dataUrl);
-    } catch (error) {
-      console.error('Error analyzing local image:', error);
+      const buffer = fs.readFileSync(filePath);
+      const base64 = buffer.toString('base64');
+      const mime = this.getMimeTypeFromFile(filePath);
+      const dataUrl = `data:${mime};base64,${base64}`;
+      return this.analyzeImage(dataUrl);
+    } catch (err) {
+      console.error('Error analyzing local image:', err);
       return null;
     }
   }
 
-  /**
-   * Get MIME type from file extension
-   * @param {string} filePath - Path to the file
-   * @returns {string} MIME type
-   */
-  getMimeTypeFromFile(filePath) {
+  /* -------------------------------------------------------------- *
+   *  Helpers                                                       *
+   * -------------------------------------------------------------- */
+
+  private getMimeTypeFromFile(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes = {
+    const map: Record<string, string> = {
       '.jpg': 'image/jpeg',
       '.jpeg': 'image/jpeg',
       '.png': 'image/png',
       '.gif': 'image/gif',
       '.webp': 'image/webp',
-      '.svg': 'image/svg+xml'
+      '.svg': 'image/svg+xml',
     };
-    return mimeTypes[ext] || 'image/jpeg';
+    return map[ext] ?? 'image/jpeg';
   }
 
-  /**
-   * Create searchable text from analysis results
-   * @param {Object} analysis - Analysis results from analyzeImage
-   * @returns {string} Searchable text for vectorization
-   */
-  createSearchableTextFromAnalysis(analysis) {
+  public createSearchableText(analysis: AnalysisResult | null): string {
     if (!analysis) return '';
 
-    const searchableElements = [
+    return [
       analysis.description,
-      ...(analysis.objects || []),
-      ...(analysis.colors || []),
-      ...(analysis.themes || []),
+      ...analysis.objects,
+      ...analysis.colors,
+      ...analysis.themes,
       analysis.mood,
       analysis.style,
       analysis.text,
-      ...(analysis.categories || []),
+      ...analysis.categories,
       analysis.composition,
       analysis.lighting,
-      analysis.setting
-    ];
-
-    return searchableElements
-      .filter(element => element && typeof element === 'string' && element.trim())
+      analysis.setting,
+    ]
+      .filter(Boolean)
       .join(' ')
       .toLowerCase();
   }
 
-  /**
-   * Extract color palette from analysis
-   * @param {Object} analysis - Analysis results
-   * @returns {Array} Array of color names
-   */
-  extractColorPalette(analysis) {
-    if (!analysis || !analysis.colors) return [];
-    return analysis.colors.filter(color => color && typeof color === 'string');
+  public extractColorPalette(analysis: AnalysisResult | null): string[] {
+    return analysis?.colors ?? [];
   }
 
-  /**
-   * Extract themes and categories for better organization
-   * @param {Object} analysis - Analysis results
-   * @returns {Object} Organized themes and categories
-   */
-  extractThemesAndCategories(analysis) {
-    if (!analysis) return { themes: [], categories: [] };
-
+  public extractThemesAndCategories(
+    analysis: AnalysisResult | null
+  ): { themes: string[]; categories: string[] } {
     return {
-      themes: (analysis.themes || []).filter(theme => theme && typeof theme === 'string'),
-      categories: (analysis.categories || []).filter(cat => cat && typeof cat === 'string')
+      themes: analysis?.themes ?? [],
+      categories: analysis?.categories ?? [],
     };
   }
 }
 
-// Export singleton instance
-const imageAnalysisService = new ImageAnalysisService();
+/* ------------------------------------------------------------------ *
+ *  Singleton export                                                  *
+ * ------------------------------------------------------------------ */
+
+const imageAnalysisService: IImageAnalysisService = new ImageAnalysisService();
 export default imageAnalysisService;

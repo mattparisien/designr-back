@@ -1,33 +1,51 @@
 // utils/fetchJson.ts
-// Thin wrapper around fetch with uniform error handling
+// Thin wrapper around fetch with uniform error handling and full
+// generics for request/response typing.
 
-interface FetchOptions {
-  method?: string;
+type HttpMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'OPTIONS'
+  | 'HEAD';
+
+interface FetchOptions<TReq = unknown> {
+  method?: HttpMethod;
   headers?: Record<string, string>;
-  body?: any;
+  body?: TReq;
 }
 
-export async function fetchJson(url: string, options: FetchOptions = {}): Promise<any> {
+export async function fetchJson<TRes = unknown, TReq = unknown>(
+  url: string,
+  options: FetchOptions<TReq> = {}
+): Promise<TRes> {
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
-  
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
+
+  const defaultHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
   };
 
-  const mergedOptions = {
-    ...defaultOptions,
+  const mergedOptions: RequestInit = {
     ...options,
     headers: {
-      ...defaultOptions.headers,
+      ...defaultHeaders,
       ...options.headers,
     },
   };
 
-  if (mergedOptions.body && typeof mergedOptions.body === 'object') {
-    mergedOptions.body = JSON.stringify(mergedOptions.body);
+  // Stringify JSON bodies automatically
+  if (
+    mergedOptions.body !== undefined &&
+    typeof mergedOptions.body === 'object' &&
+    !(mergedOptions.body instanceof FormData) &&
+    !(mergedOptions.body instanceof Blob)
+  ) {
+    mergedOptions.body = JSON.stringify(
+      mergedOptions.body as unknown as Record<string, unknown>
+    );
   }
 
   try {
@@ -37,19 +55,21 @@ export async function fetchJson(url: string, options: FetchOptions = {}): Promis
       console.log('  URL:', fullUrl);
       console.log('  Body:', mergedOptions.body);
     }
-    
+
     const response = await fetch(fullUrl, mergedOptions);
-    
+
     if (!response.ok) {
-      // Log response details for debugging
       const responseText = await response.text();
       console.error(`HTTP ${response.status} for ${fullUrl}:`, responseText);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return await response.json();
-  } catch (error) {
-    console.error(`Fetch error for ${fullUrl}:`, error.message);
-    throw error;
+    // Empty responses (e.g., 204 No Content)
+    if (response.status === 204) return undefined as unknown as TRes;
+
+    return (await response.json()) as TRes;
+  } catch (err: any) {
+    console.error(`Fetch error for ${fullUrl}:`, err.message);
+    throw err;
   }
 }

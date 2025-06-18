@@ -74,7 +74,7 @@ export interface IVectorStoreService {
   updateAsset(asset: Asset): Promise<void>;
   deleteAsset(assetId: string): Promise<void>;
   removeDocumentChunks(assetId: string): Promise<void>;
-  searchAssets(query: string, userId: string | null, options?: SearchOptions): Promise<unknown[]>;
+  searchAssets(query: string, userId?: string | null, options?: SearchOptions): Promise<unknown[]>;
   findSimilarAssets(assetId: string, userId: string | null, limit?: number, threshold?: number): Promise<unknown[]>;
   searchDocumentChunks(query: string, userId: string | null, options?: SearchOptions): Promise<unknown[]>;
   hybridSearch(query: string, userId: string | null, options?: {
