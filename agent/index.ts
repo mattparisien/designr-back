@@ -168,7 +168,7 @@ async function callResponses({ input, previousId = null }: { input: any; previou
 /* ------------------------------------------------------------------ *
  * 3.  Core runner loop — max 8 cycles                                *
  * ------------------------------------------------------------------ */
-async function runAssistant(prompt: string, { vectorStore = {}, imageAnalysis = {} }: AgentConfig = {}): Promise<AssistantResponse> {
+async function runAssistant(prompt: string, { vectorStore, imageAnalysis }: AgentConfig = {}): Promise<AssistantResponse> {
   const EXECUTORS = createExecutors({ vectorStore, imageAnalysis });
 
   let response = await callResponses({ input: prompt });
@@ -232,7 +232,7 @@ async function runAssistant(prompt: string, { vectorStore = {}, imageAnalysis = 
 /* ------------------------------------------------------------------ *
  * 4.  Public factory                                                 *
  * ------------------------------------------------------------------ */
-function buildAgent({ vectorStore = {}, imageAnalysis = {} }: AgentConfig = {}): Agent {
+function buildAgent({ vectorStore, imageAnalysis }: AgentConfig = {}): Agent {
   return {
     run: (prompt: string) => runAssistant(prompt, { vectorStore, imageAnalysis }),
   };

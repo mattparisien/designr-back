@@ -28,6 +28,7 @@ interface IChat extends Document {
   updatedAt: Date;
   addMessage(role: string, content: string, metadata?: Record<string, any>): void;
   getFormattedMessages(maxMessages?: number): any[];
+  getConversationHistory(maxMessages?: number): Array<{ role: string; content: string }>;
 }
 
 interface IChatModel extends Model<IChat> {

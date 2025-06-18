@@ -32,6 +32,16 @@ export interface CreateSocialMediaProjectParams {
   format?: string;             // default "post"
 }
 
+export interface NormalizeSearchResultsParams {
+  results: Array<{
+    title: string;
+    snippet: string;
+    url: string;
+    image?: string;
+  }>;
+  designIntent: string;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Executor map: one entry per tool
  * ──────────────────────────────────────────────────────────────────────── */
@@ -39,6 +49,7 @@ export interface CreateSocialMediaProjectParams {
 export interface ExecutorMap {
   search_assets: (p: SearchAssetsParams) => Promise<SearchResult>;
   search_docs:   (p: SearchDocsParams)   => Promise<SearchResult>;
+  normalize_search_results: (p: NormalizeSearchResultsParams) => Promise<any>;
   create_social_media_project: (
     p: CreateSocialMediaProjectParams
   ) => Promise<ProjectResponse>;
@@ -70,6 +81,35 @@ export function createExecutors(
       const results =
         (await vectorStore?.searchAssets?.(search)) ?? [];
       return { results, count: results.length };
+    },
+
+    /* — normalize_search_results — */
+    async normalize_search_results({ results, designIntent }) {
+      // Transform search results into design elements
+      const elements = results.map((result, index) => ({
+        id: `element_${index}`,
+        type: 'text',
+        content: {
+          text: `${result.title}\n${result.snippet}`,
+          fontSize: 16,
+          fontFamily: 'Arial',
+          color: '#333333'
+        },
+        position: { x: 50, y: 50 + (index * 100) },
+        size: { width: 300, height: 80 },
+        metadata: {
+          source: result.url,
+          image: result.image,
+          designIntent
+        }
+      }));
+
+      return {
+        elements,
+        designIntent,
+        sourceCount: results.length,
+        message: `Successfully normalized ${results.length} search results into design elements for: ${designIntent}`
+      };
     },
 
     /* — create_social_media_project — */

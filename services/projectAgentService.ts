@@ -6,7 +6,6 @@
 // Now with proper hosted tool call support for web search.
 // ---------------------------------------------------------------------------
 
-require('dotenv').config();
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -18,7 +17,7 @@ import imageAnalysis from './imageAnalysisService';
 import { IVectorStoreService } from './vectorStore';
 
 
-interface IProjectAgentService {
+export interface IProjectAgentService {
   initialize(): Promise<void>;
   chat(userText: string, options?: { userId?: string }): Promise<{ assistant_text: string, toolOutputs?: Record<string, any>, traceId?: string, note?: string }>;
   chatWithHistory(userText: string, conversationHistory?: Array<{ role: string, content: string }>, options?: { userId?: string }): Promise<{ assistant_text: string, toolOutputs?: Record<string, any>, traceId?: string }>;
@@ -191,7 +190,7 @@ class ProjectAgentService implements IProjectAgentService {
       initialized: this.#initialized,
       model: ProjectAgentService.MODEL,
       app: ProjectAgentService.APP,
-      tools: this.#agent?.tools?.map((t: any) => t.name) ?? [],
+      tools: ['search_assets', 'search_docs', 'normalize_search_results', 'create_social_media_project', 'web_search'],
       vectorStoreReady: !!this.#vectorStore,
       imageAnalysisReady: !!this.#imageAnalysis,
       version: '5.2.0 - With hosted tool call support'
@@ -251,4 +250,4 @@ class ProjectAgentService implements IProjectAgentService {
   }
 }
 
-export default new ProjectAgentService();
+export default ProjectAgentService;

@@ -1,13 +1,16 @@
 {
+  "preset": "ts-jest",
   "testEnvironment": "node",
-  "transform": {},
+  "transform": {
+    "^.+\\.tsx?$": "ts-jest"
+  },
   "testPathIgnorePatterns": [
     "/node_modules/",
     "/dist/"
   ],
   "collectCoverageFrom": [
-    "agent/**/*.js",
-    "services/projectAgentService.js",
+    "agent/**/*.ts",
+    "services/**/*.ts",
     "!**/node_modules/**",
     "!**/dist/**"
   ],
