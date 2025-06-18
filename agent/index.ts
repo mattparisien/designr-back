@@ -1,9 +1,7 @@
 // agent/index.ts — Responses-API implementation (no Agents SDK)
 import dotenv from 'dotenv';
 import fetch from "node-fetch";
-import { IVectorStoreService } from 'services/vectorStore';
-import { AgentConfig } from "./executors"
-import { createExecutors } from './executors';
+import { AgentConfig, createExecutors } from "./executors";
 dotenv.config();
 
 /* ------------------------------------------------------------------ *
@@ -19,32 +17,6 @@ interface AssistantResponse {
   finalOutput: string;
   toolCalls?: ToolCall[];
 }
-
-interface ProjectData {
-  title: string;
-  description: string;
-  type: string;
-  userId: string;
-  category: string;
-  canvasSize: any;
-  designSpec: any;
-  mainType: string;
-  platform: string;
-  format: string;
-}
-
-interface CreateSocialMediaProjectParams {
-  title: string;
-  platform: string;
-  format?: string;
-  category?: string;
-}
-
-interface ImageAnalysis {
-  // Define image analysis interface as needed
-}
-
-
 
 export interface Agent {
   run: (prompt: string) => Promise<AssistantResponse>;
