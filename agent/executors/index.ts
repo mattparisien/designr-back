@@ -96,7 +96,7 @@ export function createExecutors(
     /* — search_docs — */
     async search_docs({ search }) {
       const results =
-        (await vectorStore?.searchAssets?.(search)) ?? [];
+        (await vectorStore?.searchDocumentChunks?.(search, null)) ?? [];
       return { results, count: results.length };
     },
 
