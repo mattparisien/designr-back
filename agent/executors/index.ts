@@ -5,6 +5,9 @@ import {
   getPreset,
   ProjectType,
   DesignSlug,
+  PageId,
+  ElementId,
+  ElementType,
 } from "@canva-clone/shared-types";
 import axios, { AxiosResponse } from "axios";
 import { IImageAnalysisService } from "../../services/imageAnalysisService";
@@ -29,7 +32,16 @@ interface SearchResult {
 export interface CreateSocialMediaProjectParams {
   title: string;
   platform: string;
-  format?: string;             // default "post"
+  format?: string;
+  category?: string;
+  elements?: Array<{
+    id: string;
+    type: string;
+    content: unknown;
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+    metadata: Record<string, unknown>;
+  }>;
 }
 
 export interface NormalizeSearchResultsParams {
@@ -48,7 +60,7 @@ export interface NormalizeSearchResultsParams {
 
 export interface ExecutorMap {
   search_assets: (p: SearchAssetsParams) => Promise<SearchResult>;
-  search_docs:   (p: SearchDocsParams)   => Promise<SearchResult>;
+  search_docs: (p: SearchDocsParams) => Promise<SearchResult>;
   normalize_search_results: (p: NormalizeSearchResultsParams) => Promise<any>;
   create_social_media_project: (
     p: CreateSocialMediaProjectParams
@@ -63,6 +75,11 @@ export interface AgentConfig {
 /* ──────────────────────────────────────────────────────────────────────────
  * Factory: returns a fully-typed map that satisfies ExecutorMap
  * ──────────────────────────────────────────────────────────────────────── */
+
+const api = axios.create({
+  baseURL: process.env.BACKEND_URL ?? "http://localhost:3001", // or env var of your choice
+});
+
 
 export function createExecutors(
   { vectorStore, imageAnalysis }: AgentConfig
@@ -117,6 +134,7 @@ export function createExecutors(
       title,
       platform,
       format = "post",
+      elements = []
     }) {
       /* Validate / normalise •––––––––––––––––––––––––––––––––––––––––––– */
       const validCategories = [
@@ -141,15 +159,42 @@ export function createExecutors(
       const projectData: CreateProjectRequest = {
         title,
         type: ProjectType.Social,
+        pages: [
+          {
+            id: "paage_1" as PageId,
+            canvas: {
+              dimensions: {
+                width: 1080,
+                height: 1080,
+                aspectRatio: "1:1"
+              },
+              background: {
+                type: "color",
+                value: "#ffffff"
+              },
+              elements: elements.map((el, index) => ({
+                id: el.id as ElementId || `element_${index}` as ElementId,
+                type: el.type as ElementType || "text" as ElementType,
+                position: el.position || { x: 50, y: 50 + (index * 100) },
+                size: el.size || { width: 300, height: 80 },
+                x: el.position?.x || 0,
+                y: el.position?.y || 0,
+                width: el.size?.width || 300,
+                height: el.size?.height || 80,
+                content: "hi"
+              })),
+            },
+          }
+        ]
       };
 
       // POST – note: first generic = response data type
       const postRes: AxiosResponse<MutationResponse> =
-        await axios.post("/api/projects", projectData);
+        await api.post("/api/projects", projectData);
 
       // GET the full project
       const getRes: AxiosResponse<ProjectResponse> =
-        await axios.get(`/api/projects/${postRes.data.id}`);
+        await api.get(`/api/projects/${postRes.data.id}`);
 
       return getRes.data;
     },

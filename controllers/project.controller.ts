@@ -59,7 +59,7 @@ const getEtag = (doc: any): string => {
 };
 
 /* -------------------------------------------------------------------------
- * GET /v1/projects  — list with optional filters / pagination
+ * GET /projects  — list with optional filters / pagination
  * ------------------------------------------------------------------------- */
 export const listProjects = asyncHandler(async (req: Request, res) => {
     const {
@@ -101,7 +101,7 @@ export const listProjects = asyncHandler(async (req: Request, res) => {
 });
 
 /* -------------------------------------------------------------------------
- * GET /v1/projects/paginated  — list with pagination and filters
+ * GET /projects/paginated  — list with pagination and filters
  * ------------------------------------------------------------------------- */
 export const getPaginatedProjects = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const {
@@ -164,10 +164,11 @@ export const getPaginatedProjects = asyncHandler(async (req: Request, res: Respo
 });
 
 /* -------------------------------------------------------------------------
- * GET /v1/projects/:id
+ * GET /projects/:id
  * ------------------------------------------------------------------------- */
 export const getProject = asyncHandler(async (req: Request<{ id: string }>, res) => {
     const project = await Project.findById(req.params.id);
+    console.log('the project', project);
     if (!project) {
         const error: ErrorResponse = {
             success: false,
@@ -185,7 +186,7 @@ export const getProject = asyncHandler(async (req: Request<{ id: string }>, res)
 });
 
 /* -------------------------------------------------------------------------
- * POST /v1/projects
+ * POST /projects
  * ------------------------------------------------------------------------- */
 export const createProject = asyncHandler<Request<{}, any, CreateProjectRequest>>(async (req, res) => {
     const { title, type, pages = [], thumbnail } = req.body;
@@ -206,7 +207,7 @@ export const createProject = asyncHandler<Request<{}, any, CreateProjectRequest>
 });
 
 /* -------------------------------------------------------------------------
- * PATCH /v1/projects/:id
+ * PATCH /projects/:id
  * ------------------------------------------------------------------------- */
 export const updateProject = asyncHandler<Request<{ id: string }, any, UpdateProjectRequest>>(async (req, res) => {
     const { id } = req.params;
@@ -230,7 +231,7 @@ export const updateProject = asyncHandler<Request<{ id: string }, any, UpdatePro
 });
 
 /* -------------------------------------------------------------------------
- * DELETE /v1/projects/:id
+ * DELETE /projects/:id
  * ------------------------------------------------------------------------- */
 export const deleteProject = asyncHandler<Request<{ id: string }>>(async (req, res) => {
     const project = await Project.findByIdAndDelete(req.params.id);
@@ -252,7 +253,7 @@ export const deleteProject = asyncHandler<Request<{ id: string }>>(async (req, r
 });
 
 /* -------------------------------------------------------------------------
- * POST /v1/projects/bulk-delete
+ * POST /projects/bulk-delete
  * ------------------------------------------------------------------------- */
 export const bulkDeleteProjects = asyncHandler<Request<{}, any, BulkDeleteProjectsRequest>>(async (req, res) => {
     const { ids } = req.body;
@@ -265,7 +266,7 @@ export const bulkDeleteProjects = asyncHandler<Request<{}, any, BulkDeleteProjec
 });
 
 /* -------------------------------------------------------------------------
- * POST /v1/projects/:id/duplicate
+ * POST /projects/:id/duplicate
  * ------------------------------------------------------------------------- */
 export const duplicateProject = asyncHandler<Request<{ id: string }, any, DuplicateProjectRequest>>(async (req, res) => {
     const original = await Project.findById(req.params.id);
@@ -342,6 +343,7 @@ export const getProjectById = asyncHandler(async (req: Request<{ id: string }>, 
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
         // If it's a valid ObjectId, use findById
         project = await Project.findById(id);
+        console.log('the project by id', project);
     } else {
         // If it's a custom ID format, try to find by other fields
         project = await Project.findOne({

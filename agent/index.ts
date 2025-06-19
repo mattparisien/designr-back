@@ -132,7 +132,8 @@ const TOOL_DEFS = [
  * ------------------------------------------------------------------ */
 async function callResponses({ input, previousId = null }: { input: any; previousId?: string | null }): Promise<OpenAIResponse> {
 
-
+  console.log('input', input);
+  
   const body: any = {
     model: MODEL,
     instructions:
@@ -170,6 +171,7 @@ async function callResponses({ input, previousId = null }: { input: any; previou
  * ------------------------------------------------------------------ */
 async function runAssistant(prompt: string, { vectorStore, imageAnalysis }: AgentConfig = {}): Promise<AssistantResponse> {
   const EXECUTORS = createExecutors({ vectorStore, imageAnalysis });
+  const executedTools: ToolCall[] = []; // Track all executed tools
 
   let response = await callResponses({ input: prompt });
   let previousId = response.id;
@@ -183,20 +185,25 @@ async function runAssistant(prompt: string, { vectorStore, imageAnalysis }: Agen
       console.log(`  Item ${i}: type=${item.type}, name=${item.name || 'N/A'}`);
     });
 
-    // 4-A  If there's an assistant message with text → return it
+    // 4-A  If there's an assistant message with text and no more tool calls → return it
     const finalMsg = outArr.find(o => o.type === 'message');
     if (!outArr.some(o => o.type === 'tool_call' || o.type === 'function_call')) {
       console.log(`✅ No more tool calls found, returning final output`);
       const text = finalMsg?.content?.map(c => c.text).join(' ') || '';
-      return { finalOutput: text };
+      return { 
+        finalOutput: text, 
+        toolCalls: executedTools.length > 0 ? executedTools : undefined 
+      };
     }
 
     // 4-B  Handle the *first* tool call in the array
     const call = outArr.find(o => o.type === 'tool_call' || o.type === 'function_call');
+    console.log('the call', call);
     if (!call) continue;
 
     console.log(`🔧 Found tool call: ${call.name || call.tool?.type}`);
-    const { id: callId, tool, name, arguments: argJson } = call;
+    console.log(`🔧 Full call object:`, JSON.stringify(call, null, 2));
+  const { call_id: callId = call.id, tool, name, arguments: argJson } = call;
 
     // Hosted web_search: no executor; just continue thread
     if (tool?.type === 'web_search') {
@@ -219,14 +226,28 @@ async function runAssistant(prompt: string, { vectorStore, imageAnalysis }: Agen
 
     console.log(`📤 Tool result:`, result);
 
-    // Combine result and return, track toolCalls
-    const assistantMsg = outArr.find(o => o.type === 'message');
-    const assistantText = assistantMsg?.content?.map(c => c.text).join(' ') || '';
-    const combinedOutput = assistantText + '\n\n✅ Project Created: ' + (result.message || JSON.stringify(result));
-    return { finalOutput: combinedOutput, toolCalls: [{ name, args, result }] };
+    // Track the executed tool
+    executedTools.push({ name, args, result });
+
+    // Continue the conversation with the tool result
+    const toolResultMessage = `Tool "${name}" executed successfully with result: ${JSON.stringify(result)}`;
+    response = await callResponses({ 
+      input: [
+        {
+          type: "function_call_output",
+          call_id: callId,
+          output: toolResultMessage
+        }
+      ], 
+      previousId 
+    });
+    previousId = response.id;
   }
 
-  return { finalOutput: '(stopped after 8 tool calls)' };
+  return { 
+    finalOutput: '(stopped after 8 tool calls)', 
+    toolCalls: executedTools.length > 0 ? executedTools : undefined 
+  };
 }
 
 /* ------------------------------------------------------------------ *

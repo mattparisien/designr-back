@@ -53,10 +53,6 @@ export const BaseProjectSchema = {
     type: String,
     trim: true
   },
-  userId: {
-    type: String,
-    required: true
-  },
   thumbnail: {
     type: String
   },
