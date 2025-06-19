@@ -209,7 +209,7 @@ async function runAssistant(prompt: string, { vectorStore, imageAnalysis }: Agen
     if (tool?.type === 'web_search') {
       console.log(`🌐 Processing web search...`);
       response = await callResponses({ input: [], previousId });
-      console.log('the repsonse', response);
+      console.log('the response', response);
       previousId = response.id;
       continue;
     }
