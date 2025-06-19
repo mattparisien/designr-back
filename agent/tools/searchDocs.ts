@@ -1,9 +1,9 @@
-// agent/tools/searchDocs.js
+// agent/tools/searchDocs.ts
 // Tool for searching within uploaded document text
 
-const { requireDynamic } = require('../../utils/dynamicImports');
+import { requireDynamic } from '../../utils/dynamicImports';
 
-async function createSearchDocsTool(vectorStore) {
+export async function createSearchDocsTool(vectorStore: any) {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -23,4 +23,3 @@ async function createSearchDocsTool(vectorStore) {
   });
 }
 
-module.exports = { createSearchDocsTool };

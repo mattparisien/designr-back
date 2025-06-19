@@ -1,10 +1,10 @@
-// agent/tools/projects/listProjectTypes.js
+// agent/tools/projects/listProjectTypes.ts
 // Tool for listing available project types with hierarchical support
 
-const { requireDynamic } = require('../../../utils/dynamicImports');
-const { getAvailablePlatforms, getAvailableFormats, hierarchicalPlatforms } = require('../../config/hierarchicalPlatforms');
+import { requireDynamic } from '../../../utils/dynamicImports';
+import { getAvailablePlatforms, getAvailableFormats, hierarchicalPlatforms } from '../../config/hierarchicalPlatforms';
 
-async function listProjectTypesTool() {
+export async function listProjectTypesTool() {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -117,4 +117,3 @@ async function listProjectTypesTool() {
   });
 }
 
-module.exports = { listProjectTypesTool };

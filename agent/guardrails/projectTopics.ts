@@ -1,9 +1,9 @@
-// agent/guardrails/projectTopics.js
+// agent/guardrails/projectTopics.ts
 // Guardrail to keep conversations focused on design and project topics
 
-const FORBIDDEN_TOPICS = require('../config/forbiddenTopics');
+import FORBIDDEN_TOPICS from '../config/forbiddenTopics';
 
-function createProjectFocusedTopicsGuardrail() {
+export function createProjectFocusedTopicsGuardrail() {
   return {
     name: 'project_focused_topics',
     description: 'Keeps conversations focused on design and project topics',
@@ -42,4 +42,3 @@ function createProjectFocusedTopicsGuardrail() {
   };
 }
 
-module.exports = { createProjectFocusedTopicsGuardrail };

@@ -1,9 +1,9 @@
-// agent/tools/analyzeImage.js
+// agent/tools/analyzeImage.ts
 // Tool for analyzing image colors and objects
 
-const { requireDynamic } = require('../../utils/dynamicImports');
+import { requireDynamic } from '../../utils/dynamicImports';
 
-async function createAnalyzeImageTool(imageAnalysis) {
+export async function createAnalyzeImageTool(imageAnalysis: any) {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -19,4 +19,3 @@ async function createAnalyzeImageTool(imageAnalysis) {
   });
 }
 
-module.exports = { createAnalyzeImageTool };

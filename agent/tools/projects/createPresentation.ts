@@ -1,10 +1,10 @@
-// agent/tools/projects/createPresentation.js
+// agent/tools/projects/createPresentation.ts
 // Tool for creating presentation projects
 
-const { requireDynamic } = require('../../../utils/dynamicImports');
-const { fetchJson } = require('../../../utils/fetchJson');
+import { requireDynamic } from '../../../utils/dynamicImports';
+import { fetchJson } from '../../../utils/fetchJson';
 
-async function createPresentationTool() {
+export async function createPresentationTool() {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -59,4 +59,3 @@ async function createPresentationTool() {
   });
 }
 
-module.exports = { createPresentationTool };

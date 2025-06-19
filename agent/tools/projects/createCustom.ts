@@ -1,32 +1,36 @@
-// agent/tools/projects/createPrint.js
-// Tool for creating print projects
+// agent/tools/projects/createCustom.ts
+// Tool for creating custom dimension projects
 
-const { requireDynamic } = require('../../../utils/dynamicImports');
-const { fetchJson } = require('../../../utils/fetchJson');
-const printSizes = require('../../config/printSizes');
+import { requireDynamic } from '../../../utils/dynamicImports';
+import { fetchJson } from '../../../utils/fetchJson';
 
-async function createPrintTool() {
+export async function createCustomProjectTool() {
   const { tool, z } = await requireDynamic();
   
   return tool({
-    name: 'create_print_project',
-    description: 'Create a new print project with standard print dimensions.',
+    name: 'create_custom_project',
+    description: 'Create a new custom project with specified dimensions.',
     parameters: z.object({
-      title: z.string().default('Untitled Print Design').describe('Title for the print project'),
-      format: z.enum(Object.keys(printSizes)).describe('Print format'),
+      title: z.string().default('Untitled Custom Design').describe('Title for the custom project'),
+      width: z.number().int().min(100).max(8000).describe('Canvas width in pixels'),
+      height: z.number().int().min(100).max(8000).describe('Canvas height in pixels'),
       category: z.enum(['marketing', 'education', 'events', 'personal', 'other']).default('personal').describe('Project category'),
     }),
-    execute: async ({ title, format, category }, ctx) => {
+    execute: async ({ title, width, height, category }, ctx) => {
       try {
         // Extract userId from context - try multiple possible locations
         const userId = ctx.userId || ctx.context?.userId || ctx.user?.id || ctx.user || 'default-user';
         
-        const canvasSize = printSizes[format];
+        const canvasSize = {
+          name: `Custom ${width}x${height}`,
+          width,
+          height
+        };
         
         const projectData = {
           title,
-          description: `Print-ready ${format.replace('-', ' ')} design`,
-          type: 'print',
+          description: `Custom dimensions: ${width}x${height}px`,
+          type: 'custom',
           userId: userId,
           category,
           canvasSize
@@ -44,10 +48,10 @@ async function createPrintTool() {
             title: project.title,
             type: project.type,
             category: project.category,
-            format,
+            dimensions: `${width}x${height}`,
             canvasSize: project.canvasSize
           },
-          message: `Created "${title}" ${format.replace('-', ' ')} print project successfully!`
+          message: `Created "${title}" custom project (${width}x${height}px) successfully!`
         });
       } catch (error) {
         return JSON.stringify({
@@ -59,4 +63,3 @@ async function createPrintTool() {
   });
 }
 
-module.exports = { createPrintTool };

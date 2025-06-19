@@ -1,9 +1,9 @@
-// agent/tools/searchAssets.js
+// agent/tools/searchAssets.ts
 // Tool for searching visually similar assets in the user's library
 
-const { requireDynamic } = require('../../utils/dynamicImports');
+import { requireDynamic } from '../../utils/dynamicImports';
 
-async function createSearchAssetsTool(vectorStore) {
+export async function createSearchAssetsTool(vectorStore: any) {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -22,4 +22,3 @@ async function createSearchAssetsTool(vectorStore) {
   });
 }
 
-module.exports = { createSearchAssetsTool };

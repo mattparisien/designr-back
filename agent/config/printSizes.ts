@@ -1,4 +1,4 @@
-// agent/config/printSizes.js
+// agent/config/printSizes.ts
 // Standard print format dimensions
 
 const printSizes = {
@@ -11,4 +11,4 @@ const printSizes = {
   'flyer': { name: "Flyer", width: 794, height: 1123 }
 };
 
-module.exports = printSizes;
+export default printSizes;

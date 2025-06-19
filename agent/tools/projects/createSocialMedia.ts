@@ -1,12 +1,12 @@
-// agent/tools/projects/createSocialMedia.js
+// agent/tools/projects/createSocialMedia.ts
 // Tool for creating social media projects with hierarchical type support
 
-const { requireDynamic } = require('../../../utils/dynamicImports');
-const { fetchJson } = require('../../../utils/fetchJson');
-const platformSizes = require('../../config/platformSizes');
-const { getHierarchicalDimensions, getAvailablePlatforms, getAvailableFormats } = require('../../config/hierarchicalPlatforms');
+import { requireDynamic } from '../../../utils/dynamicImports';
+import { fetchJson } from '../../../utils/fetchJson';
+import platformSizes from '../../config/platformSizes';
+import { getHierarchicalDimensions, getAvailablePlatforms, getAvailableFormats } from '../../config/hierarchicalPlatforms';
 
-async function createSocialMediaTool() {
+export async function createSocialMediaTool() {
   const { tool, z } = await requireDynamic();
   
   return tool({
@@ -106,4 +106,3 @@ async function createSocialMediaTool() {
   });
 }
 
-module.exports = { createSocialMediaTool };
