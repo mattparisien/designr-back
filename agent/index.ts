@@ -37,7 +37,9 @@ interface OpenAIResponse {
 /* ------------------------------------------------------------------ *
  * 0.  Config                                                         *
  * ------------------------------------------------------------------ */
-const ENDPOINT = 'https://api.openai.com/v1/responses';
+const ENDPOINT =
+  process.env.OPENAI_RESPONSES_ENDPOINT ||
+  'https://api.openai.com/v1/responses';
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const APP_NAME = process.env.APP_NAME || 'Canva Clone';
 
