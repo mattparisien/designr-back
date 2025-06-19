@@ -46,6 +46,7 @@ const folderRoutes = require('./routes/folders');
 const assetRoutes = require('./routes/assets');
 const templateRoutes = require('./routes/templates'); // Import template routes
 const brandRoutes = require('./routes/brands'); // Import brand routes
+const agentRoutes = require('./routes/agent'); // Import agent routes
 
 // Routes
 app.use('/api/projects', projectRoutes);
@@ -56,6 +57,7 @@ app.use('/api/folders', folderRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/templates', templateRoutes); // Use template routes
 app.use('/api/brands', brandRoutes); // Use brand routes
+app.use('/api/agent', agentRoutes); // Use agent routes
 
 // Base route
 app.get('/', (req, res) => {
