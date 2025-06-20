@@ -59,7 +59,35 @@ describe('Agent Integration Tests', () => {
       expect(response.body.parsed).not.toBeNull();
       
       console.log('✅ Real AI JSON Response:', response.body);
-    }, 10000); // 10 second timeout for AI response    it('should handle invalid requests with proper error response', async () => {
+    }, 10000); // 10 second timeout for AI response
+
+    it('should perform web search when requested', async () => {
+      // Skip test if no API key
+      if (!process.env.OPENAI_API_KEY) {
+        console.log('Skipping web search integration test - no API key');
+        return;
+      }
+
+      const response = await request(app)
+        .post('/api/agent/generate')
+        .send({
+          prompt: 'What is the current weather in New York City? Please search for current information.',
+          response_format: null
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('response');
+      expect(typeof response.body.response).toBe('string');
+      expect(response.body.response.length).toBeGreaterThan(0);
+      
+      // The response should contain information that could only come from a web search
+      // We can't predict exact content, but it should be substantive
+      expect(response.body.response.length).toBeGreaterThan(50);
+      
+      console.log('✅ Web search response:', response.body.response);
+    }, 15000); // 15 second timeout for web search + AI response
+
+    it('should handle invalid requests with proper error response', async () => {
       const response = await request(app)
         .post('/api/agent/generate')
         .send({
