@@ -91,5 +91,83 @@ describe('Agent Integration Tests (New Architecture)', () => {
       
       console.log('✅ Response format validation handled properly:', response.body);
     });
+    
+    it('should perform web search and return current information with enhanced logging', async () => {
+      // Skip test if no API key
+      if (!process.env.OPENAI_API_KEY) {
+        console.log('Skipping web search integration test - no API key');
+        return;
+      }
+
+      console.log('🚀 Starting web search test with enhanced logging...');
+      
+      const response = await request(app)
+        .post('/api/agent/generate')
+        .send({
+          prompt: 'What is the current weather in New York City? Please search the web for real-time weather information.',
+          response_format: null
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('response');
+      expect(typeof response.body.response).toBe('string');
+      expect(response.body.response.length).toBeGreaterThan(50);
+      
+      console.log('📏 Response Length:', response.body.response.length);
+      console.log('🌐 Full Web Search Results:');
+      console.log('='.repeat(80));
+      console.log(response.body.response);
+      console.log('='.repeat(80));
+      
+      // Check if response contains current/real-time information indicators
+      const hasCurrentInfo = response.body.response.toLowerCase().includes('current') ||
+                            response.body.response.toLowerCase().includes('now') ||
+                            response.body.response.toLowerCase().includes('today') ||
+                            response.body.response.match(/\d{1,2}:\d{2}/) || // time format
+                            response.body.response.toLowerCase().includes('weather') ||
+                            response.body.response.toLowerCase().includes('temperature');
+      
+      console.log('⏰ Contains current/real-time info:', hasCurrentInfo);
+      console.log('🌡️ Contains weather information:', response.body.response.toLowerCase().includes('weather'));
+      
+      expect(hasCurrentInfo).toBe(true);
+      console.log('✅ Web search test with enhanced logging completed successfully!');
+    }, 20000); // 20 second timeout for web search + AI response
+
+    it('should perform web search for recent news and events', async () => {
+      // Skip test if no API key
+      if (!process.env.OPENAI_API_KEY) {
+        console.log('Skipping news search integration test - no API key');
+        return;
+      }
+
+      console.log('📰 Starting news search test...');
+      
+      const response = await request(app)
+        .post('/api/agent/generate')
+        .send({
+          prompt: 'What are the latest technology news headlines today? Please search the web for recent tech news.',
+          response_format: null
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('response');
+      expect(typeof response.body.response).toBe('string');
+      expect(response.body.response.length).toBeGreaterThan(100);
+      
+      // Check if response contains news-related keywords
+      const hasNewsContent = response.body.response.toLowerCase().includes('news') ||
+                            response.body.response.toLowerCase().includes('headlines') ||
+                            response.body.response.toLowerCase().includes('latest') ||
+                            response.body.response.toLowerCase().includes('recent') ||
+                            response.body.response.toLowerCase().includes('technology') ||
+                            response.body.response.toLowerCase().includes('tech');
+      
+      console.log('📰 Contains news-related content:', hasNewsContent);
+      console.log('📄 News search response preview:', response.body.response.substring(0, 300) + '...');
+      
+      expect(hasNewsContent).toBe(true);
+      console.log('✅ News search test completed successfully!');
+    }, 20000); // 20 second timeout for web search + AI response
   });
 });

@@ -1,10 +1,5 @@
 const Project = require('../models/Project');
-const cloudinary = require('../config/cloudinary');
-const { uploadToCloudinary } = require('../utils/cloudinaryUploader');
-const fs = require('fs');
-const path = require('path');
-const { promisify } = require('util');
-const unlinkAsync = promisify(fs.unlink);
+const { processProjectThumbnail } = require('../utils/thumbnailProcessor');
 
 // Get all projects (with optional filtering)
 exports.getProjects = async (req, res) => {
@@ -128,42 +123,10 @@ exports.getProjectById = async (req, res) => {
 // Create new project
 exports.createProject = async (req, res) => {
   try {
-    const projectData = req.body;
+    // Process project data and handle thumbnail if needed
+    const processedProjectData = await processProjectThumbnail(req.body, req.body.userId);
     
-    // Handle thumbnail if it's a data URL (base64)
-    if (projectData.thumbnail && projectData.thumbnail.startsWith('data:image')) {
-      try {
-        // Upload the thumbnail to Cloudinary
-        const cloudinaryFolder = `users/${projectData.userId}/thumbnails`;
-        // Create a temporary file with the base64 data in the project's temp-uploads directory
-        const tempDir = path.join(__dirname, '../temp-uploads');
-        
-        // Ensure temp directory exists
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
-        
-        const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
-        
-        // Extract the base64 data without the prefix
-        const base64Data = projectData.thumbnail.replace(/^data:image\/\w+;base64,/, "");
-        await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
-        
-        // Upload to Cloudinary
-        const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
-        
-        // Replace the data URL with the Cloudinary URL
-        projectData.thumbnail = uploadResult.secure_url;
-        
-        // Clean up the temporary file
-        await unlinkAsync(tmpFilePath);
-      } catch (thumbnailError) {
-        console.error('Error processing thumbnail:', thumbnailError);
-        // Continue with project creation even if thumbnail processing fails
-      }
-    }
-    
-    const newProject = new Project(projectData);
+    const newProject = new Project(processedProjectData);
     const savedProject = await newProject.save();
     
     res.status(201).json(savedProject);
@@ -179,71 +142,38 @@ exports.updateProject = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     
-    // Handle thumbnail update if it's a data URL (base64)
-    if (updates.thumbnail && updates.thumbnail.startsWith('data:image')) {
-      try {
-        // Find the project to get the user ID
-        const project = id.match(/^[0-9a-fA-F]{24}$/) 
-          ? await Project.findById(id)
-          : await Project.findOne({ $or: [{ _id: id }, { 'pages.id': id }] });
-          
-        if (!project) {
-          return res.status(404).json({ message: 'Project not found' });
-        }
-        
-        // Upload the thumbnail to Cloudinary
-        const cloudinaryFolder = `users/${project.userId}/thumbnails`;
-        // Create a temporary file with the base64 data in the project's temp-uploads directory
-        const tempDir = path.join(__dirname, '../temp-uploads');
-        
-        // Ensure temp directory exists
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
-        
-        const tmpFilePath = path.join(tempDir, `thumbnail_${Date.now()}.png`);
-        
-        // Extract the base64 data without the prefix
-        const base64Data = updates.thumbnail.replace(/^data:image\/\w+;base64,/, "");
-        await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
-        
-        // Upload to Cloudinary
-        const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
-        
-        // Replace the data URL with the Cloudinary URL
-        updates.thumbnail = uploadResult.secure_url;
-        
-        // Clean up the temporary file
-        await unlinkAsync(tmpFilePath);
-      } catch (thumbnailError) {
-        console.error('Error processing thumbnail:', thumbnailError);
-        // Continue with project update even if thumbnail processing fails
-      }
-    }
-    
+    // First, find the project to get the user ID for thumbnail processing
     let project;
-    
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      // If it's a valid ObjectId, use findByIdAndUpdate
-      project = await Project.findByIdAndUpdate(
-        id, 
-        updates, 
-        { new: true, runValidators: true }
-      );
+      project = await Project.findById(id);
     } else {
-      // For custom ID formats, use findOneAndUpdate
-      project = await Project.findOneAndUpdate(
-        { $or: [{ _id: id }, { 'pages.id': id }] },
-        updates,
-        { new: true, runValidators: true }
-      );
+      project = await Project.findOne({ $or: [{ _id: id }, { 'pages.id': id }] });
     }
     
     if (!project) {
       return res.status(404).json({ message: 'Project not found' });
     }
     
-    res.status(200).json(project);
+    // Process updates and handle thumbnail if needed
+    const processedUpdates = await processProjectThumbnail(updates, project.userId);
+    
+    // Update the project with processed data
+    let updatedProject;
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      updatedProject = await Project.findByIdAndUpdate(
+        id, 
+        processedUpdates, 
+        { new: true, runValidators: true }
+      );
+    } else {
+      updatedProject = await Project.findOneAndUpdate(
+        { $or: [{ _id: id }, { 'pages.id': id }] },
+        processedUpdates,
+        { new: true, runValidators: true }
+      );
+    }
+    
+    res.status(200).json(updatedProject);
   } catch (error) {
     console.error('Error updating project:', error);
     res.status(400).json({ message: 'Failed to update project', error: error.message });
