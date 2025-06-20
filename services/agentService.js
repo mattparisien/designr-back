@@ -1,4 +1,4 @@
-// agentService.js  — minimal, self-contained, CommonJS
+// agentService.js  — CommonJS
 const OpenAI = require('openai');
 
 /**
@@ -8,20 +8,31 @@ const OpenAI = require('openai');
  * @prop {string=} description
  * @prop {Object=} parameters
  * @prop {boolean=} strict
- * @prop {(args:Object)=>Promise<any>=} execute  Executor for custom functions
+ * @prop {(args:Object)=>Promise<any>=} execute
  */
 
 class AgentService {
   /**
-   * @param {{ tools?: Record<string, ToolDef> }} opts
+   * @param {{ tools?: Record<string, ToolDef>, enableWebSearch?: boolean }} opts
+   *        tools            — additional custom or hosted tools
+   *        enableWebSearch  — set to false if you truly want to remove it
    */
-  constructor({ tools = {} } = {}) {
+  constructor({ tools = {}, enableWebSearch = true } = {}) {
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Separate “definitions” (sent to OpenAI) from “executors” (run locally).
+    /** @type {ToolDef[]} */
     this.toolDefs = [];
+    /** @type {Record<string,(args:Object)=>Promise<any>>} */
     this.executors = {};
 
+    // ---------- 1. default hosted web_search ----------
+    if (enableWebSearch) {
+      // Avoid duplicate if user already provided one called 'web_search'
+      const hasWS = Object.values(tools).some(t => t.type === 'web_search');
+      if (!hasWS) this.toolDefs.push({ type: 'web_search' });
+    }
+
+    // ---------- 2. user-supplied tools ----------
     for (const [key, t] of Object.entries(tools)) {
       if (t.type === 'function') {
         this.toolDefs.push({
@@ -33,17 +44,14 @@ class AgentService {
         });
         this.executors[key] = t.execute;
       } else {
-        // built-in hosted tools like web_search / file_search
-        this.toolDefs.push({ ...t });          // usually just { type:'web_search' }
-        // no executor needed – OpenAI runs it
+        // hosted tools such as file_search; OpenAI runs them
+        this.toolDefs.push({ ...t });
       }
     }
   }
 
   /**
-   * Core loop: send prompt ➜ handle tool calls ➜ return final answer
-   * @param {string} prompt
-   * @param {{response_format?: object, maxSteps?: number}} [opts]
+   * Send prompt ➜ follow tool calls ➜ return final answer
    */
   async generateResponse(prompt, { response_format = null, maxSteps = 8 } = {}) {
     if (!prompt || typeof prompt !== 'string') {
@@ -56,26 +64,23 @@ class AgentService {
     const wantsJson = response_format?.type === 'json_object';
     const instructions = [
       'You are a helpful assistant.',
-      wantsJson
-        ? 'Return ONLY valid JSON (no markdown, no commentary).'
-        : null
+      wantsJson ? 'Return ONLY valid JSON (no markdown).' : null
     ].filter(Boolean).join(' ');
 
-    // ---------- 1. initial request ----------
+    // 1️⃣ initial request
     let response = await this.openai.responses.create({
       model: 'gpt-4o-2024-08-06',
       instructions,
       input: prompt,
-      tools: this.toolDefs,     // <— we pass tools here
-      tool_choice: 'auto'       // optional; Auto is default
+      tools: this.toolDefs,
+      tool_choice: 'auto'
     });
 
-    // ---------- 2. loop while model asks for tools ----------
+    // 2️⃣ handle tool calls
     for (let step = 0; step < maxSteps; step++) {
       const calls = (response.output ?? []).filter(b => b.type === 'tool_call');
-      if (calls.length === 0) break; // assistant is done
+      if (calls.length === 0) break;
 
-      // Run every tool call in parallel, collect blocks for follow-up
       const toolResultBlocks = await Promise.all(
         calls.map(async call => {
           const exec = this.executors[call.name];
@@ -88,17 +93,18 @@ class AgentService {
               result = { error: err.message };
             }
           } else {
+            // Hosted tool results are returned automatically by OpenAI,
+            // but if we somehow get a call we don’t host, notify the model.
             result = { error: `No executor for tool "${call.name}"` };
           }
           return {
-            type: 'function_call_output', // alias of tool_result
-            call_id: call.id,             // MUST match the tool_call id
+            type: 'function_call_output',        // aka tool_result
+            call_id: call.id,
             output: JSON.stringify(result)
           };
         })
       );
 
-      // Send the tool results back, keyed by previous_response_id
       response = await this.openai.responses.create({
         model: 'gpt-4o-2024-08-06',
         input: toolResultBlocks,
@@ -106,8 +112,8 @@ class AgentService {
       });
     }
 
-    // ---------- 3. final text + optional JSON parse ----------
-    const text = response.output_text;           // helper from SDK
+    // 3️⃣ final text (+ optional JSON)
+    const text = response.output_text;
     let parsed;
     if (wantsJson) {
       try {
@@ -131,37 +137,3 @@ class AgentService {
 }
 
 module.exports = AgentService;
-
-/* -------------------  Example wiring  --------------------
-
-const agent = new AgentService({
-  tools: {
-    // Built-in web search
-    web_search: { type: 'web_search' },
-
-    // Custom currency-converter function (example from DataCamp)
-    convert_currency: {
-      type: 'function',
-      description: 'Convert an amount of money to a different currency',
-      parameters: {
-        type: 'object',
-        properties: {
-          amount: { type: 'number' },
-          from_currency: { type: 'string' },
-          to_currency: { type: 'string' }
-        },
-        required: ['amount', 'from_currency', 'to_currency']
-      },
-      execute: async ({ amount, from_currency, to_currency }) => {
-        // …put real FX logic here…
-        return { converted_amount: 123.45 };
-      }
-    }
-  }
-});
-
-agent.generateResponse('How much is 100 EUR in JPY?', { response_format: { type: 'json_object' } })
-  .then(console.log)
-  .catch(console.error);
-
-----------------------------------------------------------------*/

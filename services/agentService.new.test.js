@@ -22,18 +22,25 @@ describe('AgentService (New Architecture)', () => {
       responses: mockResponses
     }));
 
-    // Create a fresh instance for each test
-    agentService = new AgentService();
+    // Create a fresh instance for each test (with web search disabled for predictable testing)
+    agentService = new AgentService({ enableWebSearch: false });
   });
 
   describe('constructor', () => {
-    it('should initialize with no tools by default', () => {
+    it('should initialize with no tools by default but include web search', () => {
       const service = new AgentService();
+      expect(service.toolDefs).toHaveLength(1);
+      expect(service.toolDefs[0]).toEqual({ type: 'web_search' });
+      expect(service.executors).toEqual({});
+    });
+
+    it('should initialize with web search disabled', () => {
+      const service = new AgentService({ enableWebSearch: false });
       expect(service.toolDefs).toEqual([]);
       expect(service.executors).toEqual({});
     });
 
-    it('should initialize with function tools', () => {
+    it('should initialize with function tools and keep web search', () => {
       const tools = {
         test_function: {
           type: 'function',
@@ -45,8 +52,9 @@ describe('AgentService (New Architecture)', () => {
       
       const service = new AgentService({ tools });
       
-      expect(service.toolDefs).toHaveLength(1);
-      expect(service.toolDefs[0]).toEqual({
+      expect(service.toolDefs).toHaveLength(2);
+      expect(service.toolDefs[0]).toEqual({ type: 'web_search' });
+      expect(service.toolDefs[1]).toEqual({
         type: 'function',
         name: 'test_function',
         description: 'A test function',
@@ -56,7 +64,7 @@ describe('AgentService (New Architecture)', () => {
       expect(service.executors.test_function).toBe(tools.test_function.execute);
     });
 
-    it('should initialize with built-in tools', () => {
+    it('should not duplicate web search if user provides one', () => {
       const tools = {
         web_search: { type: 'web_search' }
       };
@@ -65,7 +73,19 @@ describe('AgentService (New Architecture)', () => {
       
       expect(service.toolDefs).toHaveLength(1);
       expect(service.toolDefs[0]).toEqual({ type: 'web_search' });
-      expect(service.executors.web_search).toBeUndefined();
+    });
+
+    it('should initialize with built-in tools', () => {
+      const tools = {
+        file_search: { type: 'file_search' }
+      };
+      
+      const service = new AgentService({ tools });
+      
+      expect(service.toolDefs).toHaveLength(2);
+      expect(service.toolDefs[0]).toEqual({ type: 'web_search' });
+      expect(service.toolDefs[1]).toEqual({ type: 'file_search' });
+      expect(service.executors.file_search).toBeUndefined();
     });
   });
 
@@ -116,7 +136,7 @@ describe('AgentService (New Architecture)', () => {
         // Assert
         expect(mockResponses.create).toHaveBeenCalledWith({
           model: 'gpt-4o-2024-08-06',
-          instructions: 'You are a helpful assistant. Return ONLY valid JSON (no markdown, no commentary).',
+          instructions: 'You are a helpful assistant. Return ONLY valid JSON (no markdown).',
           input: prompt,
           tools: [],
           tool_choice: 'auto'
@@ -142,7 +162,7 @@ describe('AgentService (New Architecture)', () => {
             execute: mockExecutor
           }
         };
-        serviceWithTools = new AgentService({ tools });
+        serviceWithTools = new AgentService({ tools, enableWebSearch: false });
       });
 
       it('should handle tool calls and execute them', async () => {
