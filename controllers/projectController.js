@@ -4,7 +4,7 @@ const { processProjectThumbnail } = require('../utils/thumbnailProcessor');
 // Get all projects (with optional filtering)
 exports.getProjects = async (req, res) => {
   try {
-    const { userId, starred, category, type, isTemplate } = req.query;
+    const { userId, starred, category, type, isTemplate, canvasWidth, canvasHeight, tags, featured, popular } = req.query;
     
     // Build filter object based on query params
     const filter = {};
@@ -13,6 +13,18 @@ exports.getProjects = async (req, res) => {
     if (category) filter.category = category;
     if (type) filter.type = type;
     if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
+    if (featured !== undefined) filter.featured = featured === 'true';
+    if (popular !== undefined) filter.popular = popular === 'true';
+    
+    // Add canvas size filtering
+    if (canvasWidth) filter['canvasSize.width'] = parseInt(canvasWidth, 10);
+    if (canvasHeight) filter['canvasSize.height'] = parseInt(canvasHeight, 10);
+    
+    // Add tag filtering (supports multiple tags as array)
+    if (tags) {
+      const tagArray = Array.isArray(tags) ? tags : [tags];
+      filter.tags = { $in: tagArray };
+    }
     
     const projects = await Project.find(filter)
       .select('title type userId thumbnail category starred shared isTemplate createdAt updatedAt')
@@ -37,7 +49,12 @@ exports.getPaginatedProjects = async (req, res) => {
       category, 
       type, 
       isTemplate,
-      search
+      search,
+      canvasWidth,
+      canvasHeight,
+      tags,
+      featured,
+      popular
     } = req.query;
 
     // Convert string parameters to appropriate types
@@ -53,6 +70,18 @@ exports.getPaginatedProjects = async (req, res) => {
     if (category) filter.category = category;
     if (type) filter.type = type;
     if (isTemplate !== undefined) filter.isTemplate = isTemplate === 'true';
+    if (featured !== undefined) filter.featured = featured === 'true';
+    if (popular !== undefined) filter.popular = popular === 'true';
+    
+    // Add canvas size filtering
+    if (canvasWidth) filter['canvasSize.width'] = parseInt(canvasWidth, 10);
+    if (canvasHeight) filter['canvasSize.height'] = parseInt(canvasHeight, 10);
+    
+    // Add tag filtering (supports multiple tags as array)
+    if (tags) {
+      const tagArray = Array.isArray(tags) ? tags : [tags];
+      filter.tags = { $in: tagArray };
+    }
     
     // Add text search if provided
     if (search) {
@@ -112,8 +141,10 @@ exports.getProjectById = async (req, res) => {
     if (!project) {
       return res.status(404).json({ message: 'Project not found' });
     }
+
+    console.log('projeeeeect', project);
     
-    res.status(200).json(project);
+    res.status(200).json({data: project});
   } catch (error) {
     console.error('Error fetching project:', error);
     res.status(500).json({ message: 'Server error', error: error.message });

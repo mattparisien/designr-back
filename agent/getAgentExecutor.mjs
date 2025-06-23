@@ -1,9 +1,8 @@
 // agents/getAgentExecutor.ts
 import { ChatOpenAI } from "@langchain/openai";
-import { createOpenAIToolsAgent, AgentExecutor } from "langchain/agents";
 import { TavilySearch } from "@langchain/tavily";
+import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { pull } from "langchain/hub";
-import { ChatPromptTemplate } from "@langchain/core/prompts";   // ✅
 
 let executorPromise = null;
 
@@ -22,11 +21,6 @@ export async function getAgentExecutor() {
         "hwchase17/openai-tools-agent"
       );
 
-      // …or craft your own quickly:
-      // const prompt = ChatPromptTemplate.fromMessages([
-      //   ["system", "You are a helpful assistant."],
-      //   MessagesPlaceholder("agent_scratchpad"),   // required
-      // ]);
 
       /* 4. Agent + executor ------------------------------------------------- */
       const agent = await createOpenAIToolsAgent({ llm, tools, prompt });

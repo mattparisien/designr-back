@@ -85,6 +85,17 @@ const ProjectSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  featured: {
+    type: Boolean,
+    default: false
+  },
+  popular: {
+    type: Boolean,
+    default: false
+  },
+  author: {
+    type: String // User ID of the creator/author
+  },
   sharedWith: [{
     type: String
   }],
