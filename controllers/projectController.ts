@@ -105,6 +105,10 @@ export const getProjectById = async (req: any, res: any) => {
       select: '-__v'
     });
 
+    console.log('the project', project);
+
+    
+
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     res.status(200).json(project);
