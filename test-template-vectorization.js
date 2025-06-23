@@ -1,10 +1,14 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
+// TypeScript support
+require('ts-node/register');
+
 const mongoose = require('mongoose');
-const { connectDB } = require('../config/db');
-const Project = require('../models/Project');
-const templateVectorService = require('../services/templateVectorService');
+const { connectDB } = require('./config/db');
+const Project = require('./models/Project.ts').default;
+const Template = require('./models/Template.ts').default;
+const templateVectorService = require('./services/templateVectorService');
 
 async function testTemplateVectorization() {
   try {

@@ -107,86 +107,104 @@ class TemplateVectorService {
     }
   }
 
-  // Create searchable text from template/project metadata
+  // Create searchable text from template metadata
   createSearchableText(template) {
     const parts = [
       template.title,
       template.description,
       template.type,
-      template.category,
+      ...(template.categories || []),
       ...(template.tags || [])
     ];
 
-    // Add canvas size information
-    if (template.canvasSize) {
-      parts.push(`${template.canvasSize.width}x${template.canvasSize.height}`);
-      if (template.canvasSize.name) {
-        parts.push(template.canvasSize.name);
+    // Handle aspectRatio for templates
+    if (template.aspectRatio) {
+      parts.push(template.aspectRatio);
+      // Add descriptive terms for aspect ratios
+      switch (template.aspectRatio) {
+        case '1:1': parts.push('square', 'instagram post', 'social media'); break;
+        case '4:5': parts.push('portrait', 'instagram story', 'vertical'); break;
+        case '9:16': parts.push('story', 'vertical video', 'mobile'); break;
+        case '16:9': parts.push('landscape', 'presentation', 'widescreen'); break;
       }
     }
 
-    // Add information from template pages/elements
-    if (template.pages && Array.isArray(template.pages)) {
-      template.pages.forEach(page => {
-        if (page.name) parts.push(page.name);
-        
-        // Extract text content from elements
-        if (page.elements && Array.isArray(page.elements)) {
-          page.elements.forEach(element => {
-            if (element.type === 'text' && element.content) {
-              parts.push(element.content);
-            }
-            if (element.alt) {
-              parts.push(element.alt);
-            }
-          });
-        }
-
-        // Add background information
-        if (page.background && page.background.type) {
-          parts.push(`background-${page.background.type}`);
-        }
-      });
+    // For Project-based templates (if this is called on a Project with layoutId)
+    if (template.ownerId && !template.categories) {
+      // This is likely a Project being used as a template
+      parts.push('user-created', 'custom-template');
+      if (template.type) parts.push(template.type);
     }
-
-    // Add visual style information
-    const visualStyles = this.extractVisualStyles(template);
-    parts.push(...visualStyles);
 
     return parts.filter(Boolean).join(' ').toLowerCase();
   }
 
-  // Extract visual style information from template elements
-  extractVisualStyles(template) {
-    const styles = [];
-    
-    if (template.pages && Array.isArray(template.pages)) {
-      template.pages.forEach(page => {
-        if (page.elements && Array.isArray(page.elements)) {
-          page.elements.forEach(element => {
-            // Text styles
-            if (element.type === 'text') {
-              if (element.fontFamily) styles.push(element.fontFamily);
-              if (element.isBold) styles.push('bold');
-              if (element.isItalic) styles.push('italic');
-              if (element.textAlign) styles.push(`align-${element.textAlign}`);
-            }
-            
-            // Color information
-            if (element.color) styles.push(`color-${element.color.replace('#', '')}`);
-            if (element.backgroundColor) styles.push(`background-${element.backgroundColor.replace('#', '')}`);
-            if (element.borderColor) styles.push(`border-${element.borderColor.replace('#', '')}`);
-            
-            // Shape information
-            if (element.type === 'shape' && element.shapeType) {
-              styles.push(element.shapeType);
-            }
-          });
-        }
-      });
-    }
+  // Extract layout information for enhanced search
+  async extractLayoutInfo(layoutId) {
+    try {
+      // Import Layout model dynamically to avoid circular dependencies
+      const Layout = require('../models/Page.ts').default;
+      const layout = await Layout.findById(layoutId);
+      
+      if (!layout) return {};
+      
+      const layoutInfo = {
+        elementCount: 0,
+        textElementCount: 0,
+        imageElementCount: 0,
+        shapeElementCount: 0,
+        textContent: [],
+        hasBackground: false,
+        canvasSize: null
+      };
 
-    return styles;
+      if (layout.pages && Array.isArray(layout.pages)) {
+        layout.pages.forEach(page => {
+          // Extract canvas size
+          if (page.canvas && !layoutInfo.canvasSize) {
+            layoutInfo.canvasSize = {
+              width: page.canvas.width,
+              height: page.canvas.height
+            };
+          }
+
+          // Check background
+          if (page.background && page.background.type !== 'color') {
+            layoutInfo.hasBackground = true;
+          }
+
+          // Process elements
+          if (page.elements && Array.isArray(page.elements)) {
+            page.elements.forEach(element => {
+              layoutInfo.elementCount++;
+              
+              switch (element.kind) {
+                case 'text':
+                  layoutInfo.textElementCount++;
+                  if (element.content) {
+                    layoutInfo.textContent.push(element.content);
+                  }
+                  break;
+                case 'image':
+                  layoutInfo.imageElementCount++;
+                  if (element.alt) {
+                    layoutInfo.textContent.push(element.alt);
+                  }
+                  break;
+                case 'shape':
+                  layoutInfo.shapeElementCount++;
+                  break;
+              }
+            });
+          }
+        });
+      }
+
+      return layoutInfo;
+    } catch (error) {
+      console.error('Error extracting layout info:', error);
+      return {};
+    }
   }
 
   // Add template to vector store
@@ -197,60 +215,73 @@ class TemplateVectorService {
         return;
       }
 
-      const searchableText = this.createSearchableText(template);
+      // Extract layout information if layoutId exists
+      const layoutInfo = template.layoutId ? await this.extractLayoutInfo(template.layoutId) : {};
+      
+      // Create enhanced searchable text
+      const baseSearchableText = this.createSearchableText(template);
+      const layoutSearchableText = layoutInfo.textContent ? layoutInfo.textContent.join(' ') : '';
+      const searchableText = `${baseSearchableText} ${layoutSearchableText}`.trim();
+
       const embedding = await this.generateEmbedding(searchableText);
 
-      // Count elements for complexity metric
-      let elementCount = 0;
-      let textElementCount = 0;
-      let imageElementCount = 0;
-      
-      if (template.pages && Array.isArray(template.pages)) {
-        template.pages.forEach(page => {
-          if (page.elements && Array.isArray(page.elements)) {
-            elementCount += page.elements.length;
-            page.elements.forEach(element => {
-              if (element.type === 'text') textElementCount++;
-              if (element.type === 'image') imageElementCount++;
-            });
-          }
-        });
-      }
+      // Determine if this is a Template model or Project model
+      const isTemplateModel = template.categories !== undefined || template.aspectRatio !== undefined;
+      const isProjectModel = template.ownerId !== undefined;
 
       const vector = {
         id: template._id.toString(),
         values: embedding,
         metadata: {
           templateId: template._id.toString(),
-          userId: template.userId,
           title: template.title,
           description: template.description || '',
-          type: template.type,
-          category: template.category || 'uncategorized',
-          tags: template.tags || [],
-          starred: template.starred || false,
-          featured: template.featured || false,
-          popular: template.popular || false,
-          author: template.author || template.userId,
-          createdAt: template.createdAt ? template.createdAt.toISOString() : new Date().toISOString(),
-          updatedAt: template.updatedAt ? template.updatedAt.toISOString() : new Date().toISOString(),
           searchableText: searchableText,
           
-          // Canvas information
-          canvasWidth: template.canvasSize?.width || 0,
-          canvasHeight: template.canvasSize?.height || 0,
-          canvasName: template.canvasSize?.name || '',
+          // Template-specific fields
+          ...(isTemplateModel && {
+            type: 'template',
+            slug: template.slug,
+            aspectRatio: template.aspectRatio,
+            categories: template.categories || [],
+            tags: template.tags || [],
+            popularity: template.popularity || 0,
+            status: template.status || 'active',
+            version: template.version || 1
+          }),
           
-          // Template complexity metrics
-          pageCount: template.pages?.length || 0,
-          elementCount: elementCount,
-          textElementCount: textElementCount,
-          imageElementCount: imageElementCount,
+          // Project-specific fields (when used as template)
+          ...(isProjectModel && {
+            type: 'project-template',
+            ownerId: template.ownerId?.toString(),
+            projectType: template.type,
+            starred: template.starred || false,
+            sharedWith: template.sharedWith?.map(id => id.toString()) || [],
+            sourceTemplateId: template.sourceTemplateId?.toString()
+          }),
           
-          // Visual characteristics
-          hasImages: imageElementCount > 0,
-          hasText: textElementCount > 0,
-          complexity: elementCount > 10 ? 'high' : elementCount > 5 ? 'medium' : 'low'
+          // Layout information
+          ...(layoutInfo.canvasSize && {
+            canvasWidth: layoutInfo.canvasSize.width,
+            canvasHeight: layoutInfo.canvasSize.height,
+            aspectRatioCalculated: (layoutInfo.canvasSize.width / layoutInfo.canvasSize.height).toFixed(2)
+          }),
+          
+          // Design complexity metrics
+          elementCount: layoutInfo.elementCount || 0,
+          textElementCount: layoutInfo.textElementCount || 0,
+          imageElementCount: layoutInfo.imageElementCount || 0,
+          shapeElementCount: layoutInfo.shapeElementCount || 0,
+          
+          // Design characteristics
+          hasImages: (layoutInfo.imageElementCount || 0) > 0,
+          hasText: (layoutInfo.textElementCount || 0) > 0,
+          hasBackground: layoutInfo.hasBackground || false,
+          complexity: this.calculateComplexity(layoutInfo.elementCount || 0),
+          
+          // Timestamps
+          createdAt: template.createdAt ? template.createdAt.toISOString() : new Date().toISOString(),
+          updatedAt: template.updatedAt ? template.updatedAt.toISOString() : new Date().toISOString()
         }
       };
 
@@ -260,6 +291,13 @@ class TemplateVectorService {
       console.error('Error adding template to vector store:', error);
       // Don't throw error - allow normal template operations to continue
     }
+  }
+
+  // Calculate design complexity
+  calculateComplexity(elementCount) {
+    if (elementCount > 15) return 'high';
+    if (elementCount > 7) return 'medium';
+    return 'low';
   }
 
   // Update template in vector store
@@ -305,11 +343,13 @@ class TemplateVectorService {
         limit = 20,
         threshold = 0.7,
         type = null,
-        category = null,
-        featured = null,
-        popular = null,
-        canvasSize = null,
-        userId = null // For user-specific search if needed
+        categories = null,
+        aspectRatio = null,
+        status = null,
+        ownerId = null, // For project-based templates
+        complexity = null,
+        hasImages = null,
+        hasText = null
       } = options;
 
       // Generate embedding for search query
@@ -318,17 +358,25 @@ class TemplateVectorService {
       // Build filter for template search
       const filter = {};
 
-      if (type) filter.type = { $eq: type };
-      if (category) filter.category = { $eq: category };
-      if (featured !== null) filter.featured = { $eq: featured };
-      if (popular !== null) filter.popular = { $eq: popular };
-      if (userId) filter.userId = { $eq: userId };
-      
-      // Canvas size filtering
-      if (canvasSize) {
-        if (canvasSize.width) filter.canvasWidth = { $eq: canvasSize.width };
-        if (canvasSize.height) filter.canvasHeight = { $eq: canvasSize.height };
+      // Template model filters
+      if (categories) {
+        if (Array.isArray(categories)) {
+          filter.categories = { $in: categories };
+        } else {
+          filter.categories = { $in: [categories] };
+        }
       }
+      if (aspectRatio) filter.aspectRatio = { $eq: aspectRatio };
+      if (status) filter.status = { $eq: status };
+      
+      // Project model filters
+      if (type) filter.projectType = { $eq: type };
+      if (ownerId) filter.ownerId = { $eq: ownerId };
+      
+      // Design characteristic filters
+      if (complexity) filter.complexity = { $eq: complexity };
+      if (hasImages !== null) filter.hasImages = { $eq: hasImages };
+      if (hasText !== null) filter.hasText = { $eq: hasText };
 
       // Perform vector search
       const searchResponse = await this.index.query({

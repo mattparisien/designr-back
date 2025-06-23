@@ -138,6 +138,9 @@ export const createProject = async (req: any, res: any) => {
       layoutId: layoutDoc._id
     });
 
+    // 3️⃣  Vectorize if it could serve as a template
+    await vectorizeTemplate(project);
+
     res.status(201).json(project);
   } catch (err: any) {
     console.error('createProject error', err);
@@ -222,6 +225,32 @@ export const cloneProject = async (req: any, res: any) => {
   }
 };
 
+export const toggleTemplate = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { isTemplate } = req.body;
+    
+    if (isTemplate === undefined) {
+      return res.status(400).json({ message: 'isTemplate field is required' });
+    }
+    
+    const project = await Project.findByIdAndUpdate(
+      id, 
+      { isTemplate }, 
+      { new: true, runValidators: true }
+    );
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    res.status(200).json(project);
+  } catch (err: any) {
+    console.error('Error updating project template status:', err);
+    res.status(400).json({ message: 'Failed to update project', error: err.message });
+  }
+};
+
 /**
  * TEMPLATE ROUTES
  * ------------------------------------------------------------------ */
@@ -252,21 +281,70 @@ export const getTemplates = async (req: any, res: any) => {
 
 export const searchTemplates = async (req: any, res: any) => {
   try {
-    const { query, limit = 20, threshold = 0.7 } = req.query;
+    const { query, limit = 20, threshold = 0.7, categories, aspectRatio, type } = req.query;
     if (!query) return res.status(400).json({ message: 'query is required' });
 
-    const options = { ...buildTemplateFilter(req.query), limit: +limit, threshold: +threshold };
+    const options = { 
+      limit: +limit, 
+      threshold: +threshold,
+      categories: categories ? (Array.isArray(categories) ? categories : [categories]) : null,
+      aspectRatio: aspectRatio || null,
+      type: type || null
+    };
+
+    // Perform vector search
     const vectorHits = await templateVectorService.searchTemplates(query, options);
 
-    const ids = vectorHits.map((h: any) => h.templateId);
-    const docs = await Template.find({ _id: { $in: ids } });
+    if (vectorHits.length === 0) {
+      return res.status(200).json({ 
+        results: [], 
+        total: 0, 
+        searchType: 'vector',
+        message: 'No templates found matching your search criteria'
+      });
+    }
 
+    // Separate Template IDs from Project IDs based on metadata
+    const templateIds: string[] = [];
+    const projectIds: string[] = [];
+    
+    vectorHits.forEach(hit => {
+      if (hit.metadata && hit.metadata.type === 'template') {
+        templateIds.push(hit.templateId.toString());
+      } else if (hit.metadata && hit.metadata.type === 'project-template') {
+        projectIds.push(hit.templateId.toString());
+      }
+    });
+
+    // Fetch both Template and Project documents
+    const [templates, projects] = await Promise.all([
+      templateIds.length > 0 ? Template.find({ _id: { $in: templateIds } }).populate('layoutId') : [],
+      projectIds.length > 0 ? Project.find({ _id: { $in: projectIds } }).populate('layoutId') : []
+    ]);
+
+    // Combine and enrich results
     const results = vectorHits.map((hit: any) => {
-      const doc = docs.find((d: any) => d._id.toString() === hit.templateId);
-      return doc ? { ...doc.toObject(), vectorScore: hit.score } : null;
+      let doc;
+      if (hit.metadata && hit.metadata.type === 'template') {
+        doc = templates.find((t: any) => t._id.toString() === hit.templateId);
+      } else {
+        doc = projects.find((p: any) => p._id.toString() === hit.templateId);
+      }
+      
+      return doc ? { 
+        ...doc.toObject(), 
+        vectorScore: hit.score,
+        searchRelevance: hit.score,
+        sourceType: hit.metadata?.type || 'unknown' // 'template' or 'project-template'
+      } : null;
     }).filter(Boolean);
 
-    res.status(200).json({ results, total: results.length, searchType: 'vector' });
+    res.status(200).json({ 
+      results, 
+      total: results.length, 
+      searchType: 'vector',
+      query: query 
+    });
   } catch (err: any) {
     console.error('searchTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -276,21 +354,78 @@ export const searchTemplates = async (req: any, res: any) => {
 export const getSimilarTemplates = async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit = 10, categories, aspectRatio } = req.query;
 
-    const base = await Template.findById(id);
-    if (!base) return res.status(404).json({ message: 'Template not found' });
+    // Try to find the base template in both Template and Project collections
+    const [templateDoc, projectDoc] = await Promise.all([
+      Template.findById(id),
+      Project.findById(id)
+    ]);
 
-    const hits = await templateVectorService.getSimilarTemplates(id, +limit, buildTemplateFilter(req.query));
-    const ids = hits.map((h: any) => h.templateId);
-    const docs = await Template.find({ _id: { $in: ids } });
+    const baseDoc = templateDoc || projectDoc;
+    if (!baseDoc) {
+      return res.status(404).json({ message: 'Template not found' });
+    }
 
-    const results = hits.map((h: any) => {
-      const doc = docs.find((d: any) => d._id.toString() === h.templateId);
-      return doc ? { ...doc.toObject(), similarityScore: h.score } : null;
+    const options = {
+      categories: categories ? (Array.isArray(categories) ? categories : [categories]) : null,
+      aspectRatio: aspectRatio || null
+    };
+
+    // Find similar templates using vector similarity
+    const hits = await templateVectorService.getSimilarTemplates(id, +limit, options);
+    
+    if (hits.length === 0) {
+      return res.status(200).json({ 
+        baseTemplate: { id: baseDoc._id, title: baseDoc.title },
+        results: [],
+        total: 0,
+        searchType: 'similarity',
+        message: 'No similar templates found'
+      });
+    }
+
+    // Separate Template IDs from Project IDs
+    const templateIds: string[] = [];
+    const projectIds: string[] = [];
+    
+    hits.forEach(hit => {
+      if (hit.metadata && hit.metadata.type === 'template') {
+        templateIds.push(hit.templateId.toString());
+      } else if (hit.metadata && hit.metadata.type === 'project-template') {
+        projectIds.push(hit.templateId.toString());
+      }
+    });
+
+    // Fetch documents from both collections
+    const [templates, projects] = await Promise.all([
+      templateIds.length > 0 ? Template.find({ _id: { $in: templateIds } }).populate('layoutId') : [],
+      projectIds.length > 0 ? Project.find({ _id: { $in: projectIds } }).populate('layoutId') : []
+    ]);
+
+    // Combine and enrich results
+    const results = hits.map((hit: any) => {
+      let doc;
+      if (hit.metadata && hit.metadata.type === 'template') {
+        doc = templates.find((t: any) => t._id.toString() === hit.templateId);
+      } else {
+        doc = projects.find((p: any) => p._id.toString() === hit.templateId);
+      }
+      
+      return doc ? { 
+        ...doc.toObject(), 
+        similarityScore: hit.score,
+        searchRelevance: hit.score,
+        sourceType: hit.metadata?.type || 'unknown'
+      } : null;
     }).filter(Boolean);
 
-    res.status(200).json({ baseTemplate: { id: base._id, title: base.title }, results });
+    res.status(200).json({ 
+      baseTemplate: { id: baseDoc._id, title: baseDoc.title }, 
+      results,
+      total: results.length,
+      searchType: 'similarity'
+    });
   } catch (err: any) {
     console.error('getSimilarTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -359,6 +494,95 @@ export const hybridSearchTemplates = async (req: any, res: any) => {
   }
 };
 
+/**
+ * Create a new template
+ */
+export const createTemplate = async (req: any, res: any) => {
+  try {
+    const templateData = req.body;
+
+    // Create the template
+    const template = await Template.create(templateData);
+
+    // Automatically vectorize the template
+    await vectorizeTemplate(template, true);
+
+    res.status(201).json(template);
+  } catch (err: any) {
+    console.error('createTemplate error', err);
+    res.status(400).json({ message: 'Failed to create template', error: err.message });
+  }
+};
+
+/**
+ * Update a template
+ */
+export const updateTemplate = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const template = await Template.findByIdAndUpdate(id, updates, { 
+      new: true, 
+      runValidators: true 
+    });
+
+    if (!template) {
+      return res.status(404).json({ message: 'Template not found' });
+    }
+
+    // Re-vectorize the updated template
+    await templateVectorService.updateTemplate(template);
+
+    res.status(200).json(template);
+  } catch (err: any) {
+    console.error('updateTemplate error', err);
+    res.status(400).json({ message: 'Failed to update template', error: err.message });
+  }
+};
+
+/**
+ * Delete a template
+ */
+export const deleteTemplate = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+
+    const template = await Template.findByIdAndDelete(id);
+    
+    if (!template) {
+      return res.status(404).json({ message: 'Template not found' });
+    }
+
+    // Remove from vector store
+    await templateVectorService.removeTemplate(id);
+
+    res.status(200).json({ message: 'Template deleted successfully' });
+  } catch (err: any) {
+    console.error('deleteTemplate error', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Helper function to check if a project should be vectorized as a template
+function shouldVectorizeAsTemplate(project: any): boolean {
+  // For now, we'll vectorize all projects that could serve as templates
+  // This could be enhanced with more sophisticated logic later
+  return project.layoutId && (project.starred || project.type !== 'custom');
+}
+
+// Helper function to vectorize template/project
+async function vectorizeTemplate(doc: any, isTemplate: boolean = false) {
+  try {
+    if (isTemplate || shouldVectorizeAsTemplate(doc)) {
+      await templateVectorService.addTemplate(doc);
+      console.log(`${isTemplate ? 'Template' : 'Project'} ${doc._id} vectorized successfully`);
+    }
+  } catch (error) {
+    console.error(`Error vectorizing ${isTemplate ? 'template' : 'project'}:`, error);
+  }
+}
+
 // Default export for CommonJS compatibility
 export default {
   getProjects,
@@ -371,5 +595,9 @@ export default {
   getTemplates,
   searchTemplates,
   getSimilarTemplates,
-  hybridSearchTemplates
+  hybridSearchTemplates,
+  toggleTemplate,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate
 };
