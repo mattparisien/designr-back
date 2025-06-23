@@ -64,10 +64,6 @@ const ProjectSchema = new mongoose.Schema({
     enum: ['presentation', 'social', 'print', 'custom'],
     default: 'custom'
   },
-  userId: {
-    type: String,
-    required: true
-  },
   thumbnail: {
     type: String
   },
