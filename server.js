@@ -4,6 +4,9 @@ const dotenv = require('dotenv');
 // This must come before any imports that might use environment variables
 dotenv.config();
 
+// Register ts-node to handle TypeScript imports
+require('ts-node/register');
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -15,6 +18,7 @@ const path = require('path');
 const { connectDB } = require('./config/db'); // Import connectDB from db.js
 const authController = require('./controllers/authController');
 const vectorStoreService = require('./services/vectorStore');
+const templateVectorService = require('./services/templateVectorService');
 const vectorJobProcessor = require('./services/vectorJobProcessor');
 const imageAnalysisService = require('./services/imageAnalysisService');
 const imageVectorService = require('./services/imageVectorService');
@@ -92,6 +96,15 @@ connectDB() // Use connectDB from db.js
     } catch (error) {
       console.warn('Image vector service initialization failed:', error.message);
       console.warn('Visual-focused vector generation will be disabled, falling back to text-only');
+    }
+    
+    // Initialize template vector service
+    try {
+      await templateVectorService.initialize();
+      console.log('Template vector service initialized');
+    } catch (error) {
+      console.warn('Template vector service initialization failed:', error.message);
+      console.warn('Template vector search will be disabled');
     }
     
     // Initialize Passport for Google OAuth

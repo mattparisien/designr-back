@@ -1,24 +1,24 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 // Models
-const Project = require('../models/Project.ts');
-const Template = require('../models/Template.ts');
-const Layout = require('../models/Layout.ts');
+import Project from '../models/Project';
+import Template from '../models/Template';
+import Layout from '../models/Page'; // Page.ts exports Layout model
 
 // Services / helpers
-const { processProjectThumbnail } = require('../utils/thumbnailProcessor.js');
-const templateVectorService = require('../services/templateVectorService.js');
+import { processProjectThumbnail } from '../utils/thumbnailProcessor';
+import templateVectorService from '../services/templateVectorService';
 
 /**
  * Utility helpers
  * ------------------------------------------------------------------ */
-const isObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+const isObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
 /**
  * Build a Mongo filter object from the incoming query string for projects.
  * Only fields that exist on the new Project model are supported.
  */
-function buildProjectFilter(query) {
+function buildProjectFilter(query: any) {
   const {
     ownerId,
     starred,
@@ -27,7 +27,7 @@ function buildProjectFilter(query) {
     tags
   } = query;
 
-  const filter = {};
+  const filter: any = {};
   if (ownerId) filter.ownerId = ownerId;
   if (starred !== undefined) filter.starred = starred === 'true';
   if (shared !== undefined) filter.sharedWith = { $size: 0 };
@@ -43,7 +43,7 @@ function buildProjectFilter(query) {
 /**
  * PROJECT ROUTES
  * ------------------------------------------------------------------ */
-exports.getProjects = async (req, res) => {
+export const getProjects = async (req: any, res: any) => {
   try {
     const filter = buildProjectFilter(req.query);
 
@@ -52,13 +52,13 @@ exports.getProjects = async (req, res) => {
       .sort({ updatedAt: -1 });
 
     res.status(200).json(projects);
-  } catch (err) {
+  } catch (err: any) {
     console.error('getProjects error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.getPaginatedProjects = async (req, res) => {
+export const getPaginatedProjects = async (req: any, res: any) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
     const pageNum = parseInt(page, 10);
@@ -89,13 +89,13 @@ exports.getPaginatedProjects = async (req, res) => {
       totalPages: Math.ceil(total / limitNum),
       currentPage: pageNum
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('getPaginatedProjects error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.getProjectById = async (req, res) => {
+export const getProjectById = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const query = isObjectId(id) ? { _id: id } : { slug: id };
@@ -108,7 +108,7 @@ exports.getProjectById = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     res.status(200).json(project);
-  } catch (err) {
+  } catch (err: any) {
     console.error('getProjectById error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
@@ -119,7 +119,7 @@ exports.getProjectById = async (req, res) => {
  * The request body is expected to contain:
  *   { title, ownerId, type, tags?, layout }
  */
-exports.createProject = async (req, res) => {
+export const createProject = async (req: any, res: any) => {
   try {
     const { layout: layoutPayload, ...meta } = req.body;
 
@@ -139,7 +139,7 @@ exports.createProject = async (req, res) => {
     });
 
     res.status(201).json(project);
-  } catch (err) {
+  } catch (err: any) {
     console.error('createProject error', err);
     res.status(400).json({ message: 'Failed to create project', error: err.message });
   }
@@ -149,7 +149,7 @@ exports.createProject = async (req, res) => {
  * Update project metadata and/or layout. If `layout` exists in the body, it
  * updates the referenced Layout document; otherwise only project meta changes.
  */
-exports.updateProject = async (req, res) => {
+export const updateProject = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const payload = req.body;
@@ -164,19 +164,19 @@ exports.updateProject = async (req, res) => {
     }
 
     // 🔄 2. Handle thumbnail & other meta updates
-    const processedMeta = await processProjectThumbnail(payload, project.ownerId);
-    delete processedMeta.layout; // ensure we don’t overwrite ObjectId
+    const processedMeta = await processProjectThumbnail(payload, project.ownerId?.toString() || '');
+    delete (processedMeta as any).layout; // ensure we don't overwrite ObjectId
 
     const updatedProject = await Project.findByIdAndUpdate(id, processedMeta, { new: true, runValidators: true });
 
     res.status(200).json(updatedProject);
-  } catch (err) {
+  } catch (err: any) {
     console.error('updateProject error', err);
     res.status(400).json({ message: 'Failed to update project', error: err.message });
   }
 };
 
-exports.deleteProject = async (req, res) => {
+export const deleteProject = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const project = await Project.findById(id);
@@ -187,13 +187,13 @@ exports.deleteProject = async (req, res) => {
     await Project.findByIdAndDelete(id);
 
     res.status(200).json({ message: 'Project deleted' });
-  } catch (err) {
+  } catch (err: any) {
     console.error('deleteProject error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.cloneProject = async (req, res) => {
+export const cloneProject = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { ownerId } = req.body;
@@ -203,7 +203,8 @@ exports.cloneProject = async (req, res) => {
     if (!source) return res.status(404).json({ message: 'Project not found' });
 
     // Deep‑clone layout
-    const clonedLayout = await Layout.create(JSON.parse(JSON.stringify(source.layoutId.toObject())));
+    const layoutData = (source.layoutId as any)?.toObject ? (source.layoutId as any).toObject() : source.layoutId;
+    const clonedLayout = await Layout.create(JSON.parse(JSON.stringify(layoutData)));
 
     const clone = await Project.create({
       title: `${source.title} (Copy)`,
@@ -215,7 +216,7 @@ exports.cloneProject = async (req, res) => {
     });
 
     res.status(201).json(clone);
-  } catch (err) {
+  } catch (err: any) {
     console.error('cloneProject error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
@@ -224,9 +225,9 @@ exports.cloneProject = async (req, res) => {
 /**
  * TEMPLATE ROUTES
  * ------------------------------------------------------------------ */
-function buildTemplateFilter(query) {
+function buildTemplateFilter(query: any) {
   const { type, category, featured, popular } = query;
-  const filter = { status: 'active' };
+  const filter: any = { status: 'active' };
   if (type) filter.type = type;
   if (category) filter.categories = category;
   if (featured !== undefined) filter.featured = featured === 'true';
@@ -234,7 +235,7 @@ function buildTemplateFilter(query) {
   return filter;
 }
 
-exports.getTemplates = async (req, res) => {
+export const getTemplates = async (req: any, res: any) => {
   try {
     const filter = buildTemplateFilter(req.query);
 
@@ -243,13 +244,13 @@ exports.getTemplates = async (req, res) => {
       .sort({ popularity: -1, updatedAt: -1 });
 
     res.status(200).json(templates);
-  } catch (err) {
+  } catch (err: any) {
     console.error('getTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.searchTemplates = async (req, res) => {
+export const searchTemplates = async (req: any, res: any) => {
   try {
     const { query, limit = 20, threshold = 0.7 } = req.query;
     if (!query) return res.status(400).json({ message: 'query is required' });
@@ -257,22 +258,22 @@ exports.searchTemplates = async (req, res) => {
     const options = { ...buildTemplateFilter(req.query), limit: +limit, threshold: +threshold };
     const vectorHits = await templateVectorService.searchTemplates(query, options);
 
-    const ids = vectorHits.map((h) => h.templateId);
+    const ids = vectorHits.map((h: any) => h.templateId);
     const docs = await Template.find({ _id: { $in: ids } });
 
-    const results = vectorHits.map((hit) => {
-      const doc = docs.find((d) => d._id.toString() === hit.templateId);
+    const results = vectorHits.map((hit: any) => {
+      const doc = docs.find((d: any) => d._id.toString() === hit.templateId);
       return doc ? { ...doc.toObject(), vectorScore: hit.score } : null;
     }).filter(Boolean);
 
     res.status(200).json({ results, total: results.length, searchType: 'vector' });
-  } catch (err) {
+  } catch (err: any) {
     console.error('searchTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.getSimilarTemplates = async (req, res) => {
+export const getSimilarTemplates = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { limit = 10 } = req.query;
@@ -281,22 +282,22 @@ exports.getSimilarTemplates = async (req, res) => {
     if (!base) return res.status(404).json({ message: 'Template not found' });
 
     const hits = await templateVectorService.getSimilarTemplates(id, +limit, buildTemplateFilter(req.query));
-    const ids = hits.map((h) => h.templateId);
+    const ids = hits.map((h: any) => h.templateId);
     const docs = await Template.find({ _id: { $in: ids } });
 
-    const results = hits.map((h) => {
-      const doc = docs.find((d) => d._id.toString() === h.templateId);
+    const results = hits.map((h: any) => {
+      const doc = docs.find((d: any) => d._id.toString() === h.templateId);
       return doc ? { ...doc.toObject(), similarityScore: h.score } : null;
     }).filter(Boolean);
 
     res.status(200).json({ baseTemplate: { id: base._id, title: base.title }, results });
-  } catch (err) {
+  } catch (err: any) {
     console.error('getSimilarTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-exports.hybridSearchTemplates = async (req, res) => {
+export const hybridSearchTemplates = async (req: any, res: any) => {
   try {
     const {
       query,
@@ -328,17 +329,17 @@ exports.hybridSearchTemplates = async (req, res) => {
 
     /* Combine */
     const scores = new Map();
-    vectorHits.forEach((h) => {
+    vectorHits.forEach((h: any) => {
       scores.set(h.templateId, { vectorScore: h.score * +vectorWeight, textScore: 0 });
     });
-    textHits.forEach((doc, idx) => {
+    textHits.forEach((doc: any, idx: number) => {
       const textScore = (1 - idx / textHits.length) * +textWeight;
       const id = doc._id.toString();
       if (!scores.has(id)) scores.set(id, { vectorScore: 0, textScore });
       else scores.get(id).textScore = textScore;
     });
 
-    const combined = Array.from(scores.entries()).map(([id, s]) => ({
+    const combined = Array.from(scores.entries()).map(([id, s]: [string, any]) => ({
       templateId: id,
       totalScore: s.vectorScore + s.textScore,
       ...s
@@ -347,17 +348,28 @@ exports.hybridSearchTemplates = async (req, res) => {
     const docs = await Template.find({ _id: { $in: combined.map((c) => c.templateId) } });
 
     const results = combined.map((c) => {
-      const doc = docs.find((d) => d._id.toString() === c.templateId);
+      const doc = docs.find((d: any) => d._id.toString() === c.templateId);
       return doc ? { ...doc.toObject(), ...c } : null;
     }).filter(Boolean);
 
     res.status(200).json({ results, searchType: 'hybrid', total: results.length });
-  } catch (err) {
+  } catch (err: any) {
     console.error('hybridSearchTemplates error', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-/** ------------------------------------------------------------------
- * Export all in a single object if you prefer:  module.exports = { … }
- * ------------------------------------------------------------------ */
+// Default export for CommonJS compatibility
+export default {
+  getProjects,
+  getPaginatedProjects,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  cloneProject,
+  getTemplates,
+  searchTemplates,
+  getSimilarTemplates,
+  hybridSearchTemplates
+};
