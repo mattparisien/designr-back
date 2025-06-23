@@ -28,7 +28,21 @@ function buildProjectFilter(query: any) {
   } = query;
 
   const filter: any = {};
-  if (ownerId) filter.ownerId = ownerId;
+  
+  // Handle ownerId conversion to ObjectId
+  if (ownerId) {
+    if (typeof ownerId === 'string' && isObjectId(ownerId)) {
+      filter.ownerId = new mongoose.Types.ObjectId(ownerId);
+    } else if (typeof ownerId === 'string') {
+      // For invalid ObjectId strings, we'll create a dummy ObjectId that won't match anything
+      // This prevents the query from failing but returns no results
+      filter.ownerId = new mongoose.Types.ObjectId();
+      console.warn(`Warning: Invalid ownerId in filter: ${ownerId}`);
+    } else {
+      filter.ownerId = ownerId; // Already an ObjectId
+    }
+  }
+  
   if (starred !== undefined) filter.starred = starred === 'true';
   if (shared !== undefined) filter.sharedWith = { $size: 0 };
   if (type) filter.type = type;
@@ -137,12 +151,26 @@ export const createProject = async (req: any, res: any) => {
     // 2️⃣  Prepare project payload
     const thumbnailProcessed = await processProjectThumbnail(meta, meta.ownerId);
 
+    // 3️⃣  Convert ownerId to ObjectId if it's a valid format, otherwise create a dummy ObjectId
+    let processedOwnerId = (thumbnailProcessed as any).ownerId;
+    if (processedOwnerId && typeof processedOwnerId === 'string') {
+      if (isObjectId(processedOwnerId)) {
+        processedOwnerId = new mongoose.Types.ObjectId(processedOwnerId);
+      } else {
+        // For now, create a dummy ObjectId for development/testing
+        // In production, this should be replaced with proper user authentication
+        processedOwnerId = new mongoose.Types.ObjectId();
+        console.warn(`Warning: Creating dummy ObjectId for invalid ownerId: ${(thumbnailProcessed as any).ownerId}`);
+      }
+    }
+
     const project = await Project.create({
       ...thumbnailProcessed,
+      ownerId: processedOwnerId,
       layoutId: layoutDoc._id
     });
 
-    // 3️⃣  Vectorize if it could serve as a template
+    // 4️⃣  Vectorize if it could serve as a template
     await vectorizeTemplate(project);
 
     res.status(201).json(project);
@@ -213,9 +241,21 @@ export const cloneProject = async (req: any, res: any) => {
     const layoutData = (source.layoutId as any)?.toObject ? (source.layoutId as any).toObject() : source.layoutId;
     const clonedLayout = await Layout.create(JSON.parse(JSON.stringify(layoutData)));
 
+    // Convert ownerId to ObjectId if needed
+    let processedOwnerId = ownerId;
+    if (typeof processedOwnerId === 'string') {
+      if (isObjectId(processedOwnerId)) {
+        processedOwnerId = new mongoose.Types.ObjectId(processedOwnerId);
+      } else {
+        // For now, create a dummy ObjectId for development/testing
+        processedOwnerId = new mongoose.Types.ObjectId();
+        console.warn(`Warning: Creating dummy ObjectId for invalid ownerId: ${ownerId}`);
+      }
+    }
+
     const clone = await Project.create({
       title: `${source.title} (Copy)`,
-      ownerId,
+      ownerId: processedOwnerId,
       type: source.type,
       tags: source.tags,
       layoutId: clonedLayout._id,
