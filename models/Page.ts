@@ -13,10 +13,11 @@ const PageSchema = new mongoose.Schema({
   elements: [BaseElementSchema]
 }, { _id: false });
 
-const LayoutSchema = new mongoose.Schema({
+ const LayoutSchema = new mongoose.Schema({
   pages: [PageSchema]
 });
 
 export type Layout = InferSchemaType<typeof LayoutSchema>;
 
+export const LayoutDocument = mongoose.model('Layout', LayoutSchema);
 export default mongoose.model('Layout', LayoutSchema);
