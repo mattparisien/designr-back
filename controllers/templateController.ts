@@ -59,8 +59,35 @@ export const createTemplate = async (req: Request, res: Response) => {
   try {
     const payload = req.body;
 
+    // If no layoutId is provided, create a basic layout
     if (!payload.layoutId) {
-      return res.status(400).json({ message: 'layoutId is required' });
+      // Create a basic layout with default canvas and empty elements
+      const basicLayout = await Layout.create({
+        pages: [{
+          name: "Page 1",
+          canvas: { width: 800, height: 600 },
+          background: {
+            type: "color",
+            value: "#ffffff"
+          },
+          elements: []
+        }]
+      });
+      
+      payload.layoutId = basicLayout._id;
+    }
+
+    // Generate default values for required fields if not provided
+    if (!payload.slug) {
+      payload.slug = `template-${Date.now()}`;
+    }
+    
+    if (!payload.aspectRatio) {
+      payload.aspectRatio = '4:5'; // Default aspect ratio
+    }
+    
+    if (!payload.embedding) {
+      payload.embedding = new Array(768).fill(0); // Default empty embedding
     }
 
     const saved = await Template.create(payload);
