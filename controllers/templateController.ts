@@ -1,4 +1,4 @@
-/* ------------------------------------------------------------------
+/* -----import Template from '../models/Template';------------------------------------------------------------
  * Template‑related controller (TypeScript)
  * Works with the token‑driven Template model and lean Project/Layout models
  * ------------------------------------------------------------------ */
@@ -139,6 +139,16 @@ export const useTemplate = async (req: Request, res: Response) => {
 
     if (!ownerId) return res.status(400).json({ message: 'ownerId is required' });
 
+    // Validate ownerId as a valid ObjectId or convert invalid strings to valid ObjectIds
+    let processedOwnerId;
+    if (!isObjectId(ownerId)) {
+      console.warn(`Warning: Creating dummy ObjectId for invalid ownerId: ${ownerId}`);
+      processedOwnerId = new mongoose.Types.ObjectId();
+      console.log('processedOwnerId', processedOwnerId);
+    } else {
+      processedOwnerId = ownerId;
+    }
+
     const tmpl = await Template.findById(id).populate('layoutId');
     if (!tmpl) return res.status(404).json({ message: 'Template not found' });
 
@@ -162,7 +172,7 @@ export const useTemplate = async (req: Request, res: Response) => {
 
     const project = await Project.create({
       title: `${tmpl.title} (Copy)`,
-      ownerId,
+      ownerId: processedOwnerId,
       tags: tmpl.tags,
       type: tmpl.aspectRatio,
       layoutId: clonedLayout._id,

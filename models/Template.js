@@ -100,6 +100,10 @@ const TemplateSchema = new mongoose.Schema({
     width: { type: Number, required: true },
     height: { type: Number, required: true }
   },
+  layoutId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Layout'
+  },
   metadata: {
     type: mongoose.Schema.Types.Mixed
   }

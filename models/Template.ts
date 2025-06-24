@@ -53,4 +53,4 @@ const TemplateSchema = new mongoose.Schema({
 // TemplateSchema.index({ embedding: 'vector', dims: 1536, similarity: 'cosine' });
 
 export type Template = InferSchemaType<typeof TemplateSchema>;
-export default mongoose.model('Template', TemplateSchema);
+export default mongoose.model('TemplateTS', TemplateSchema);
