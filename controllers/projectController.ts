@@ -1,13 +1,18 @@
 import mongoose from 'mongoose';
 
-// Models
-import Project from '../models/Project';
-import Template from '../models/Template';
-import Layout from '../models/Page'; // Page.ts exports Layout model
+// Models - using * as import for better compatibility
+import * as ProjectModule from '../models/Project';
+import * as TemplateModule from '../models/Template';
+import * as LayoutModule from '../models/Page'; // Page.ts exports Layout model
 
 // Services / helpers
 import { processProjectThumbnail } from '../utils/thumbnailProcessor';
 import templateVectorService from '../services/templateVectorService';
+
+// Extract the default exports
+const Project = (ProjectModule as any).default || ProjectModule;
+const Template = (TemplateModule as any).default || TemplateModule;
+const Layout = (LayoutModule as any).default || LayoutModule;
 
 /**
  * Utility helpers
@@ -138,18 +143,29 @@ export const getProjectById = async (req: any, res: any) => {
  *   { title, ownerId, type, tags?, layout }
  */
 export const createProject = async (req: any, res: any) => {
+  console.log('made it here!');
   try {
     const { layout: layoutPayload, ...meta } = req.body;
 
     if (!layoutPayload) {
+      console.log('layoutPayload is missing');
       return res.status(400).json({ message: 'layout is required' });
     }
+    console.log('layoutPayload', layoutPayload);
 
     // 1️⃣  Persist layout first
     const layoutDoc = await Layout.create(layoutPayload);
 
+    if (!layoutDoc) {
+      return res.status(500).json({ message: 'Failed to create layout' });
+    }
+
     // 2️⃣  Prepare project payload
     const thumbnailProcessed = await processProjectThumbnail(meta, meta.ownerId);
+
+    if (!thumbnailProcessed) {
+      return res.status(400).json({ message: 'Failed to process thumbnail' });
+    }
 
     // 3️⃣  Convert ownerId to ObjectId if it's a valid format, otherwise create a dummy ObjectId
     let processedOwnerId = (thumbnailProcessed as any).ownerId;
@@ -164,19 +180,28 @@ export const createProject = async (req: any, res: any) => {
       }
     }
 
+    // 3️⃣  Create the project with the processed data
+    console.log('processedOwnerId', processedOwnerId);
+
     const project = await Project.create({
       ...thumbnailProcessed,
       ownerId: processedOwnerId,
       layoutId: layoutDoc._id
     });
 
+    if (!project) {
+      return res.status(500).json({ message: 'Failed to create project' });
+    }
+
     // 4️⃣  Vectorize if it could serve as a template
     await vectorizeTemplate(project);
+
+    console.log('Project created successfully:', project);
 
     res.status(201).json(project);
   } catch (err: any) {
     console.error('createProject error', err);
-    res.status(400).json({ message: 'Failed to create project', error: err.message });
+    return res.status(400).json({ message: 'Failed to create project', error: err.message });
   }
 };
 
@@ -352,7 +377,7 @@ export const searchTemplates = async (req: any, res: any) => {
     const templateIds: string[] = [];
     const projectIds: string[] = [];
     
-    vectorHits.forEach(hit => {
+    vectorHits.forEach((hit: any) => {
       if (hit.metadata && hit.metadata.type === 'template') {
         templateIds.push(hit.templateId.toString());
       } else if (hit.metadata && hit.metadata.type === 'project-template') {
@@ -433,7 +458,7 @@ export const getSimilarTemplates = async (req: any, res: any) => {
     const templateIds: string[] = [];
     const projectIds: string[] = [];
     
-    hits.forEach(hit => {
+    hits.forEach((hit: any) => {
       if (hit.metadata && hit.metadata.type === 'template') {
         templateIds.push(hit.templateId.toString());
       } else if (hit.metadata && hit.metadata.type === 'project-template') {

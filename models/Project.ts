@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { InferSchemaType } from 'mongoose';
 
 /* ------------ project.model.ts ------------ */
 const ProjectSchema = new mongoose.Schema({
@@ -16,4 +16,13 @@ const ProjectSchema = new mongoose.Schema({
   sourceTemplateId: { type: mongoose.Types.ObjectId, ref: 'Template' }
 }, { timestamps: true });
 
-export default mongoose.model('Project', ProjectSchema);
+// Create the model
+const ProjectModel = mongoose.model('Project', ProjectSchema);
+
+// Export the inferred type
+export type Project = InferSchemaType<typeof ProjectSchema>;
+
+// Export the document type (includes Mongoose methods)
+export type ProjectDocument = InstanceType<typeof ProjectModel>;
+
+export default ProjectModel;
