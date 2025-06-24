@@ -19,5 +19,6 @@ const PageSchema = new mongoose.Schema({
 
 export type Layout = InferSchemaType<typeof LayoutSchema>;
 
-export const LayoutDocument = mongoose.model('Layout', LayoutSchema);
-export default mongoose.model('Layout', LayoutSchema);
+const LayoutModel = mongoose.model('Layout', LayoutSchema);
+export { LayoutModel as LayoutDocument };
+export default LayoutModel;

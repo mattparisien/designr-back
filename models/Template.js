@@ -55,6 +55,11 @@ const TemplateSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  slug: {
+    type: String,
+    unique: true,
+    sparse: true // Allow null values but make non-null values unique
+  },
   description: {
     type: String,
     trim: true
