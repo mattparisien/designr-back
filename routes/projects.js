@@ -8,6 +8,8 @@ router.get('/', projectController.getProjects);
 // GET projects with pagination
 router.get('/paginated', projectController.getPaginatedProjects);
 
+router.get('/presets', projectController.getProjectPresets);
+
 // GET all templates
 router.get('/templates', projectController.getTemplates);
 

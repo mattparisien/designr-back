@@ -8,6 +8,7 @@ import * as LayoutModule from '../models/Page'; // Page.ts exports Layout model
 // Services / helpers
 import { processProjectThumbnail } from '../utils/thumbnailProcessor';
 import templateVectorService from '../services/templateVectorService';
+import { getPresetsList } from '../config/projectPresets';
 
 // Extract the default exports
 const Project = (ProjectModule as any).default || ProjectModule;
@@ -140,21 +141,61 @@ export const getProjectById = async (req: any, res: any) => {
 /**
  * Create a new project.
  * The request body is expected to contain:
- *   { title, ownerId, type, tags?, layout }
+ *   { title, ownerId, type, tags?, layout?, presetId? }
  */
 export const createProject = async (req: any, res: any) => {
   console.log('made it here!');
   try {
-    const { layout: layoutPayload, ...meta } = req.body;
+    const { layout: layoutPayload, presetId, ...meta } = req.body;
 
-    if (!layoutPayload) {
-      console.log('layoutPayload is missing');
-      return res.status(400).json({ message: 'layout is required' });
+    let finalLayoutPayload = layoutPayload;
+
+    // Handle preset-based project creation
+    if (presetId && !layoutPayload) {
+      console.log('Creating project from preset:', presetId);
+      
+      try {
+        const { getPresetByKey } = await import('../config/projectPresets');
+        const [category, key] = presetId.split(':');
+        const preset = getPresetByKey(category, key);
+        
+        if (!preset) {
+          return res.status(400).json({ message: `Preset ${presetId} not found` });
+        }
+        
+        // Create default layout with preset data
+        finalLayoutPayload = {
+          pages: [{
+            id: `page-${Date.now()}`,
+            name: 'Page 1',
+            canvas: {
+              width: preset.canvasSize.width,
+              height: preset.canvasSize.height
+            },
+            background: { type: 'color', value: '#ffffff' },
+            elements: []
+          }]
+        };
+        
+        // Apply preset data to meta
+        if (!meta.title) meta.title = `${preset.name} Project`;
+        if (!meta.type) meta.type = preset.type;
+        if (!meta.tags) meta.tags = preset.tags;
+        
+      } catch (error) {
+        console.error('Error applying preset:', error);
+        return res.status(400).json({ message: 'Failed to apply preset data' });
+      }
     }
-    console.log('layoutPayload', layoutPayload);
+
+    if (!finalLayoutPayload) {
+      console.log('layoutPayload is missing and no preset provided');
+      return res.status(400).json({ message: 'layout or presetId is required' });
+    }
+    console.log('finalLayoutPayload', finalLayoutPayload);
 
     // 1️⃣  Persist layout first
-    const layoutDoc = await Layout.create(layoutPayload);
+    const layoutDoc = await Layout.create(finalLayoutPayload);
 
     if (!layoutDoc) {
       return res.status(500).json({ message: 'Failed to create layout' });
@@ -319,6 +360,17 @@ export const toggleTemplate = async (req: any, res: any) => {
     res.status(400).json({ message: 'Failed to update project', error: err.message });
   }
 };
+
+export const getProjectPresets = async (req: any, res: any) => {
+  try {
+    const presets = getPresetsList();
+    res.status(200).json(presets);
+  } catch (err: any) {
+    console.error('getTemplatePresets error', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
+
 
 /**
  * TEMPLATE ROUTES
@@ -651,6 +703,7 @@ async function vectorizeTemplate(doc: any, isTemplate: boolean = false) {
     console.error(`Error vectorizing ${isTemplate ? 'template' : 'project'}:`, error);
   }
 }
+
 
 // Default export for CommonJS compatibility
 export default {
