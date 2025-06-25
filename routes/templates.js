@@ -5,8 +5,6 @@ const templateController = require('../controllers/templateController.ts');
 // GET all templates (with optional filtering)
 router.get('/', templateController.getTemplates);
 
-// GET template by ID
-router.get('/:id', templateController.getTemplateById);
 
 // GET featured templates
 router.get('/featured/all', templateController.getFeaturedTemplates);
@@ -16,6 +14,12 @@ router.get('/popular/all', templateController.getPopularTemplates);
 
 // GET templates by category
 router.get('/category/:category', templateController.getTemplatesByCategory);
+
+// GET templates by category
+router.get('/presets', templateController.getTemplatePresets);
+
+// GET template by ID
+router.get('/:id', templateController.getTemplateById);
 
 // POST create new template
 router.post('/', templateController.createTemplate);

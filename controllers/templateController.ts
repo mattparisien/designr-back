@@ -9,9 +9,18 @@ import mongoose from 'mongoose';
 import Template from '../models/Template';
 import Project from '../models/Project';
 import { LayoutDocument as Layout } from '../models/Page';
+import { getPresetsList } from '../config/projectPresets';
 
 /* Helper ------------------------------------------------------------------ */
-const isObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
+const isObjectId = (id: string) => {
+  try {
+    const isValid = mongoose.Types.ObjectId.isValid(id)
+    return isValid;
+  }
+  catch (err) {
+    return false;
+  }
+};
 
 function buildTemplateFilter(query: Record<string, any>) {
   const { category, type, featured, tags } = query;
@@ -58,14 +67,52 @@ export const getTemplateById = async (req: Request, res: Response) => {
 export const createTemplate = async (req: Request, res: Response) => {
   try {
     const payload = req.body;
+    const { presetId } = payload;
+
+    // If a presetId is provided, apply preset data
+    if (presetId) {
+      try {
+        const { getPresetsList } = await import('../config/projectPresets');
+        const presets = getPresetsList();
+        const preset = presets.find(p => p.id === presetId);
+        
+        if (preset) {
+          // Apply preset data to payload
+          payload.title = payload.title || preset.name;
+          payload.type = payload.type || preset.type;
+          payload.category = payload.category || preset.category;
+          payload.tags = payload.tags || preset.tags;
+          payload.canvasSize = payload.canvasSize || preset.canvasSize;
+          
+          // Set aspect ratio based on canvas dimensions
+          if (!payload.aspectRatio && preset.canvasSize) {
+            const { width, height } = preset.canvasSize;
+            const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+            const divisor = gcd(width, height);
+            payload.aspectRatio = `${width / divisor}:${height / divisor}`;
+          }
+        } else {
+          console.warn(`Preset with ID ${presetId} not found`);
+        }
+      } catch (error) {
+        console.error('Error loading preset:', error);
+        // Continue with template creation even if preset loading fails
+      }
+    }
 
     // If no layoutId is provided, create a basic layout
     if (!payload.layoutId) {
+      // Use preset canvas size if available, otherwise use defaults
+      const canvasSize = payload.canvasSize || { width: 800, height: 600 };
+      
       // Create a basic layout with default canvas and empty elements
       const basicLayout = await Layout.create({
         pages: [{
           name: "Page 1",
-          canvas: { width: 800, height: 600 },
+          canvas: { 
+            width: canvasSize.width, 
+            height: canvasSize.height 
+          },
           background: {
             type: "color",
             value: "#ffffff"
@@ -73,7 +120,7 @@ export const createTemplate = async (req: Request, res: Response) => {
           elements: []
         }]
       });
-      
+
       payload.layoutId = basicLayout._id;
     }
 
@@ -81,14 +128,17 @@ export const createTemplate = async (req: Request, res: Response) => {
     if (!payload.slug) {
       payload.slug = `template-${Date.now()}`;
     }
-    
+
     if (!payload.aspectRatio) {
       payload.aspectRatio = '4:5'; // Default aspect ratio
     }
-    
+
     if (!payload.embedding) {
       payload.embedding = new Array(768).fill(0); // Default empty embedding
     }
+
+    // Remove presetId from payload before saving to database
+    delete payload.presetId;
 
     const saved = await Template.create(payload);
     res.status(201).json(saved);
@@ -136,6 +186,7 @@ export const useTemplate = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;            // template id
     const { ownerId } = req.body;         // new project owner
+    
 
     if (!ownerId) return res.status(400).json({ message: 'ownerId is required' });
 
@@ -261,3 +312,13 @@ export const getTemplatesByCategory = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+export const getTemplatePresets = async (req: Request, res: Response) => {
+  try {
+    const presets = getPresetsList();
+    res.status(200).json(presets);
+  } catch (err: any) {
+    console.error('getTemplatePresets error', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+}
