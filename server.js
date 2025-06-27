@@ -51,6 +51,8 @@ const assetRoutes = require('./routes/assets');
 const templateRoutes = require('./routes/templates'); // Import template routes
 const brandRoutes = require('./routes/brands'); // Import brand routes
 const agentRoutes = require('./routes/agent'); // Import agent routes
+const canvasRoutes = require('./routes/canvas'); // Import canvas routes
+const fontRoutes = require('./routes/fonts'); // Import font routes
 
 // Routes
 app.use('/api/projects', projectRoutes);
@@ -62,6 +64,8 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/templates', templateRoutes); // Use template routes
 app.use('/api/brands', brandRoutes); // Use brand routes
 app.use('/api/agent', agentRoutes); // Use agent routes
+app.use('/api/canvas', canvasRoutes); // Use canvas routes
+app.use('/api/fonts', fontRoutes); // Use font routes
 
 // Base route
 app.get('/', (req, res) => {

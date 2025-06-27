@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
+const sharp = require('sharp');
 const { uploadToCloudinary } = require('./cloudinaryUploader');
 
 const unlinkAsync = promisify(fs.unlink);
@@ -24,17 +25,24 @@ const THUMBNAIL_CONFIG = {
   DATA_URL_PATTERN: /^data:image\/\w+;base64,/,
   
   // Cloudinary folder structure template
-  FOLDER_TEMPLATE: 'users/{userId}/thumbnails'
+  FOLDER_TEMPLATE: 'users/{userId}/thumbnails',
+  
+  // Default thumbnail dimensions
+  DEFAULT_THUMBNAIL_SIZE: 300,
+  
+  // Quality for JPEG thumbnails
+  THUMBNAIL_QUALITY: 85
 };
 
 /**
- * Processes a base64 thumbnail by converting it to a file, uploading to Cloudinary, and cleaning up
+ * Processes a base64 thumbnail with aspect ratio preservation
  * @param {string} base64Thumbnail - The base64 data URL thumbnail
  * @param {string} userId - The user ID for organizing uploads in Cloudinary
+ * @param {Object} canvasSize - Canvas dimensions {width, height}
  * @returns {Promise<string>} - The Cloudinary secure URL of the uploaded thumbnail
  * @throws {Error} - If thumbnail processing fails
  */
-async function processThumbnail(base64Thumbnail, userId) {
+async function processThumbnailWithAspectRatio(base64Thumbnail, userId, canvasSize = null) {
   if (!base64Thumbnail || !base64Thumbnail.startsWith('data:image')) {
     throw new Error('Invalid thumbnail data: must be a base64 data URL starting with "data:image"');
   }
@@ -51,27 +59,63 @@ async function processThumbnail(base64Thumbnail, userId) {
       fs.mkdirSync(THUMBNAIL_CONFIG.TEMP_DIR, { recursive: true });
     }
     
-    // Generate unique temporary file path
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const fileName = `${THUMBNAIL_CONFIG.FILE_PREFIX}${timestamp}_${randomSuffix}${THUMBNAIL_CONFIG.FILE_EXTENSION}`;
-    tmpFilePath = path.join(THUMBNAIL_CONFIG.TEMP_DIR, fileName);
-    
-    // Extract the base64 data without the data URL prefix
+    // Extract base64 data
     const base64Data = base64Thumbnail.replace(THUMBNAIL_CONFIG.DATA_URL_PATTERN, '');
-    
     if (!base64Data) {
       throw new Error('Invalid base64 data: could not extract image data from data URL');
     }
     
-    // Write base64 data to temporary file
-    await fs.promises.writeFile(tmpFilePath, base64Data, { encoding: 'base64' });
+    // Create buffer from base64
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    
+    // Calculate thumbnail dimensions while preserving aspect ratio
+    let thumbnailWidth, thumbnailHeight;
+    
+    if (canvasSize && canvasSize.width && canvasSize.height) {
+      const aspectRatio = canvasSize.width / canvasSize.height;
+      const maxSize = THUMBNAIL_CONFIG.DEFAULT_THUMBNAIL_SIZE;
+      
+      if (aspectRatio > 1) {
+        // Landscape
+        thumbnailWidth = maxSize;
+        thumbnailHeight = Math.round(maxSize / aspectRatio);
+      } else {
+        // Portrait or square
+        thumbnailHeight = maxSize;
+        thumbnailWidth = Math.round(maxSize * aspectRatio);
+      }
+    } else {
+      // Fallback to square thumbnail
+      thumbnailWidth = THUMBNAIL_CONFIG.DEFAULT_THUMBNAIL_SIZE;
+      thumbnailHeight = THUMBNAIL_CONFIG.DEFAULT_THUMBNAIL_SIZE;
+    }
+    
+    // Process image with Sharp
+    const processedBuffer = await sharp(imageBuffer)
+      .resize(thumbnailWidth, thumbnailHeight, {
+        fit: 'fill', // Ensures exact dimensions matching canvas aspect ratio
+        withoutEnlargement: false
+      })
+      .jpeg({ quality: THUMBNAIL_CONFIG.THUMBNAIL_QUALITY })
+      .toBuffer();
+    
+    // Generate unique temporary file path
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const fileName = `${THUMBNAIL_CONFIG.FILE_PREFIX}${timestamp}_${randomSuffix}.jpg`;
+    tmpFilePath = path.join(THUMBNAIL_CONFIG.TEMP_DIR, fileName);
+    
+    // Write processed buffer to temporary file
+    await fs.promises.writeFile(tmpFilePath, processedBuffer);
     
     // Generate Cloudinary folder path
     const cloudinaryFolder = THUMBNAIL_CONFIG.FOLDER_TEMPLATE.replace('{userId}', userId);
     
-    // Upload to Cloudinary
-    const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder);
+    // Upload to Cloudinary with additional metadata
+    const uploadResult = await uploadToCloudinary(tmpFilePath, cloudinaryFolder, {
+      resource_type: 'image',
+      context: canvasSize ? `canvas_width=${canvasSize.width}|canvas_height=${canvasSize.height}` : undefined
+    });
     
     if (!uploadResult || !uploadResult.secure_url) {
       throw new Error('Cloudinary upload failed: no secure URL returned');
@@ -95,6 +139,18 @@ async function processThumbnail(base64Thumbnail, userId) {
 }
 
 /**
+ * Processes a base64 thumbnail by converting it to a file, uploading to Cloudinary, and cleaning up
+ * @param {string} base64Thumbnail - The base64 data URL thumbnail
+ * @param {string} userId - The user ID for organizing uploads in Cloudinary
+ * @returns {Promise<string>} - The Cloudinary secure URL of the uploaded thumbnail
+ * @throws {Error} - If thumbnail processing fails
+ */
+async function processThumbnail(base64Thumbnail, userId) {
+  // Use the new aspect ratio function without canvas size (fallback to square)
+  return processThumbnailWithAspectRatio(base64Thumbnail, userId, null);
+}
+
+/**
  * Processes thumbnail data in project data object, replacing base64 with Cloudinary URL
  * @param {Object} projectData - The project data object containing thumbnail
  * @param {string} userId - The user ID for organizing uploads
@@ -111,8 +167,35 @@ async function processProjectThumbnail(projectData, userId) {
   // Only process if thumbnail is a base64 data URL
   if (processedData.thumbnail && processedData.thumbnail.startsWith('data:image')) {
     try {
-      const cloudinaryUrl = await processThumbnail(processedData.thumbnail, userId);
+      // Extract canvas dimensions from project data for aspect ratio preservation
+      let canvasSize = null;
+      
+      // Try to get canvas size from various possible locations in project data
+      if (processedData.canvasSize) {
+        canvasSize = processedData.canvasSize;
+      } else if (processedData.layout?.pages?.[0]?.canvas) {
+        canvasSize = processedData.layout.pages[0].canvas;
+      } else if (processedData.pages?.[0]?.canvas) {
+        canvasSize = processedData.pages[0].canvas;
+      }
+      
+      // Use the new aspect ratio preserving function
+      const cloudinaryUrl = await processThumbnailWithAspectRatio(
+        processedData.thumbnail, 
+        userId, 
+        canvasSize
+      );
       processedData.thumbnail = cloudinaryUrl;
+      
+      // Add metadata about the thumbnail dimensions if canvas size was available
+      if (canvasSize && canvasSize.width && canvasSize.height) {
+        processedData.thumbnailMetadata = {
+          originalCanvasSize: canvasSize,
+          aspectRatio: `${canvasSize.width}:${canvasSize.height}`,
+          processedAt: new Date().toISOString()
+        };
+      }
+      
     } catch (error) {
       console.error('Error processing project thumbnail:', error.message);
       // Decide whether to throw or continue - currently continuing to match original behavior
@@ -161,6 +244,7 @@ function validateThumbnail(thumbnail) {
 
 module.exports = {
   processThumbnail,
+  processThumbnailWithAspectRatio,
   processProjectThumbnail,
   isBase64Thumbnail,
   validateThumbnail,

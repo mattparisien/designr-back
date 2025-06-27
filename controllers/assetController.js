@@ -20,6 +20,7 @@ const getAssetTypeFromMime = (mimeType, filename = '') => {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('font/') || mimeType.includes('font')) return 'font';
   if (mimeType.match(/pdf|word|excel|powerpoint|text|rtf|doc|xls|ppt|pages|numbers|keynote/i)) return 'document';
   
   // If MIME type is generic (like application/octet-stream), check file extension
@@ -28,6 +29,7 @@ const getAssetTypeFromMime = (mimeType, filename = '') => {
     if (ext.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return 'image';
     if (ext.match(/\.(mp4|mov|avi|webm)$/)) return 'video';
     if (ext.match(/\.(mp3|wav|ogg|m4a)$/)) return 'audio';
+    if (ext.match(/\.(ttf|otf|woff|woff2)$/)) return 'font';
     if (ext.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/)) return 'document';
   }
   
@@ -625,7 +627,7 @@ exports.configureMulter = () => {
     });
     
     // Define allowed file extensions
-    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx)$/i;
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|svg|mp4|mov|avi|webm|pdf|doc|docx|xls|xlsx|ppt|pptx|ttf|otf|woff|woff2)$/i;
     
     // Define allowed MIME types (including common generic ones)
     const allowedMimeTypes = [
@@ -638,6 +640,10 @@ exports.configureMulter = () => {
       'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Fonts
+      'font/ttf', 'font/otf', 'font/woff', 'font/woff2',
+      'application/font-woff', 'application/font-woff2',
+      'application/x-font-ttf', 'application/x-font-otf',
       // Generic types that browsers sometimes send
       'application/octet-stream', 'binary/octet-stream'
     ];

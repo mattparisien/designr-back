@@ -22,7 +22,7 @@ const AssetSchema = new Schema({
   },
   type: {
     type: String,
-    enum: ['image', 'video', 'audio', 'document', 'other'],
+    enum: ['image', 'video', 'audio', 'document', 'font', 'other'],
     required: true
   },
   mimeType: {
