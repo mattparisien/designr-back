@@ -31,9 +31,6 @@ router.post('/', projectController.createProject);
 // POST create project from image analysis
 router.post('/from-image', projectController.createProjectFromImage);
 
-// POST create project from image analysis
-router.post('/from-image', projectController.createProjectFromImage);
-
 // PUT update project
 router.put('/:id', projectController.updateProject);
 

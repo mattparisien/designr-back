@@ -712,6 +712,7 @@ async function vectorizeTemplate(doc: any, isTemplate: boolean = false) {
 export const createProjectFromImage = async (req: any, res: any) => {
   try {
     const { assetId, title, ownerId, type = 'custom', tags = [] } = req.body;
+    console.log('made it here!');
 
     if (!assetId) {
       return res.status(400).json({ message: 'Asset ID is required' });
@@ -734,10 +735,13 @@ export const createProjectFromImage = async (req: any, res: any) => {
       return res.status(400).json({ message: 'Asset has no accessible URL for analysis' });
     }
 
-    console.log('Starting image analysis for project creation:', asset.name);
-
     // 4️⃣ Run image analysis
+    console.log('before analysis...')
     const analysis = await imageAnalysisService.analyzeImage(imageUrl);
+    
+    
+    console.log('\n🔍 Backend Debug - Full analysis object:');
+    console.log('analysis', JSON.stringify(analysis, null, 2));
     
     if (!analysis || !analysis.pages || !analysis.pages.length) {
       return res.status(500).json({ message: 'Failed to analyze image or no content detected' });
@@ -745,20 +749,19 @@ export const createProjectFromImage = async (req: any, res: any) => {
 
     // 5️⃣ Prepare layout from analysis
     const analyzedPage = analysis.pages[0]; // Take the first (and likely only) page
+  
     
     const layoutPayload = {
       pages: [{
         name: analyzedPage.name || 'Analyzed Page',
         canvas: {
-          width: analyzedPage.canvas?.width || 800,
-          height: analyzedPage.canvas?.height || 600
+          width: analyzedPage.width || analyzedPage.canvas?.width || 800,
+          height: analyzedPage.height || analyzedPage.canvas?.height || 600
         },
         background: analyzedPage.background || { type: 'color', value: '#ffffff' },
         elements: analyzedPage.elements || []
       }]
     };
-
-    console.log('Created layout from analysis:', JSON.stringify(layoutPayload, null, 2));
 
     // 6️⃣ Create layout document
     const layoutDoc = await Layout.create(layoutPayload);
@@ -807,8 +810,6 @@ export const createProjectFromImage = async (req: any, res: any) => {
 
     // 1️⃣1️⃣ Vectorize the project for future template matching
     await vectorizeTemplate(project);
-
-    console.log('Project created successfully from image analysis:', project.title);
 
     res.status(201).json({
       project,

@@ -12,156 +12,120 @@ const FormData = require('form-data');
 const imageAnalysis = require('./services/imageAnalysisService'); // adjust path as needed
 
 // Configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:5001';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 const DEFAULT_USER_ID = 'default-user';
 
 async function uploadImageAsset(filePath) {
-  try {
-    console.log(`📤 Uploading image as asset: ${path.basename(filePath)}`);
-    
-    const form = new FormData();
-    form.append('file', fs.createReadStream(filePath));
-    form.append('userId', DEFAULT_USER_ID);
-    form.append('name', `Test Image - ${path.basename(filePath)}`);
-    
-    const response = await axios.post(`${API_BASE_URL}/api/assets/upload`, form, {
-      headers: {
-        ...form.getHeaders(),
-      },
-    });
-    
-    console.log(`✅ Asset uploaded successfully: ${response.data._id}`);
-    return response.data;
-  } catch (error) {
-    console.error('❌ Failed to upload asset:', error.response?.data || error.message);
-    throw error;
-  }
+    try {
+        console.log(`📤 Uploading image as asset: ${path.basename(filePath)}`);
+
+        // Create unique name with timestamp to avoid conflicts
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const uniqueName = `Test Image - ${path.basename(filePath)} - ${timestamp}`;
+
+        const form = new FormData();
+        form.append('file', fs.createReadStream(filePath));
+        form.append('userId', DEFAULT_USER_ID);
+        form.append('name', uniqueName);
+
+        const response = await axios.post(`${API_BASE_URL}/api/assets/upload`, form, {
+            headers: {
+                ...form.getHeaders(),
+            },
+        });
+
+        console.log(`✅ Asset uploaded successfully: ${response.data._id}`);
+        return response.data;
+    } catch (error) {
+        if (error.response?.status === 409) {
+            const conflictData = error.response.data;
+            if (conflictData.conflict === 'content' && conflictData.existingAsset) {
+                console.log(`♻️  File content already exists, reusing existing asset: ${conflictData.existingAsset.id}`);
+                console.log(`📎 Existing asset name: ${conflictData.existingAsset.name}`);
+                // Normalize the asset object to use _id consistently
+                const normalizedAsset = {
+                    ...conflictData.existingAsset,
+                    _id: conflictData.existingAsset.id || conflictData.existingAsset._id
+                };
+                return normalizedAsset;
+            } else {
+                console.log('⚠️  409 Conflict Details:', conflictData);
+            }
+        } else {
+            console.error('❌ Failed to upload asset:', error.response?.data || error.message);
+        }
+        throw error;
+    }
 }
 
 async function createProjectFromImage(assetId, title) {
-  try {
-    console.log(`🚀 Creating project from image analysis for asset: ${assetId}`);
-    
-    const response = await axios.post(`${API_BASE_URL}/api/projects/from-image`, {
-      assetId,
-      title: title || `Project from Image Analysis - ${new Date().toISOString()}`,
-      ownerId: DEFAULT_USER_ID,
-      type: 'custom',
-      tags: ['image-analysis', 'ai-generated']
-    });
-    
-    console.log(`✅ Project created successfully: ${response.data.project._id}`);
-    return response.data;
-  } catch (error) {
-    console.error('❌ Failed to create project:', error.response?.data || error.message);
-    throw error;
-  }
+    try {
+        console.log(`🚀 Creating project from image analysis for asset: ${assetId}`);
+
+        // Create unique title with timestamp if none provided
+        const uniqueTitle = title || `Project from Image Analysis - ${new Date().toISOString()}`;
+
+        const response = await axios.post(`${API_BASE_URL}/api/projects/from-image`, {
+            assetId,
+            title: uniqueTitle,
+            ownerId: DEFAULT_USER_ID,
+            type: 'custom',
+            tags: ['image-analysis', 'ai-generated']
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('❌ Failed to create project from image:', error.response?.data || error.message);
+        if (error.response?.status === 409) {
+            console.error('409 Conflict - This might indicate a duplicate asset or project name issue');
+        }
+        throw error;
+    }
 }
 
 async function testImageAnalysisRoute(filePath) {
-  console.log('\n🧪 Testing Image Analysis Route Integration');
-  console.log('='.repeat(50));
-  
-  try {
-    // Step 1: Upload the image as an asset
-    const asset = await uploadImageAsset(filePath);
-    
-    // Step 2: Create project from image analysis
-    const projectResult = await createProjectFromImage(asset._id, `Test Project - ${path.basename(filePath)}`);
-    
-    // Step 3: Display results
-    console.log('\n📊 Project Creation Results:');
-    console.log(`Project ID: ${projectResult.project._id}`);
-    console.log(`Project Title: ${projectResult.project.title}`);
-    console.log(`Layout ID: ${projectResult.project.layoutId}`);
-    
-    console.log('\n📐 Analysis Data Summary:');
-    const analysisData = projectResult.analysisData;
-    console.log(`Canvas Size: ${analysisData.canvas?.width}x${analysisData.canvas?.height}`);
-    console.log(`Elements Found: ${analysisData.elements?.length || 0}`);
-    console.log(`Background: ${JSON.stringify(analysisData.background)}`);
-    
-    if (analysisData.elements && analysisData.elements.length > 0) {
-      console.log('\n📝 Detected Elements:');
-      analysisData.elements.forEach((element, index) => {
-        console.log(`  ${index + 1}. ${element.kind} - ${element.content || element.shapeType || 'N/A'}`);
-        console.log(`     Position: (${element.x}, ${element.y}) Size: ${element.width}x${element.height}`);
-      });
+    console.log('\n🧪 Testing Image Analysis Route Integration');
+    console.log('='.repeat(50));
+
+    try {
+        // Step 1: Upload the image as an asset
+        const asset = await uploadImageAsset(filePath);
+
+        // Step 2: Create project from image analysis
+        const projectResult = await createProjectFromImage(asset._id, `Test Project - ${path.basename(filePath)}`);
+
+        return projectResult;
+    } catch (error) {
+        console.error('❌ Route test failed:', error.message);
+        throw error;
     }
-    
-    return projectResult;
-  } catch (error) {
-    console.error('❌ Route test failed:', error.message);
-    throw error;
-  }
 }
 
 async function main() {
-  // --- 1. Grab CLI arg -------------------------------------------------------
-  const filePath = process.argv[2];
-  if (!filePath) {
-    console.error('\nUsage: node test-image-analysis.js ./assets/test-image.jpg\n');
-    console.error('This will:');
-    console.error('1. Analyze the image locally using imageAnalysisService');
-    console.error('2. Upload the image as an asset');
-    console.error('3. Create a project using the new /projects/from-image route\n');
-    process.exit(1);
-  }
+    // --- 1. Grab CLI args ------------------------------------------------------
+    const filePath = process.argv[2];
+    const testMode = process.argv[3] || 'full'; // 'analysis', 'json', or 'full'
 
-  if (!fs.existsSync(filePath)) {
-    console.error(`❌ File not found: ${filePath}`);
-    process.exit(1);
-  }
-
-  console.log(`\n🔍 Testing Image Analysis with: ${path.resolve(filePath)}\n`);
-
-  try {
-    // --- 2. Test local image analysis service --------------------------------
-    console.log('📋 Step 1: Local Image Analysis');
-    console.log('-'.repeat(30));
-    
-    await imageAnalysis.initialize();
-    const analysis = await imageAnalysis.analyzeLocalImage(filePath);
-
-    if (!analysis) {
-      console.error('❌  Local analysis failed (see logs above).');
-      process.exit(1);
+    if (!filePath) {
+        console.error('\nUsage: node test-image-analysis.js <image-path> [mode]\n');
+        console.error('Parameters:');
+        console.error('  <image-path>  Path to the image file to analyze');
+        console.error('  [mode]        Test mode (optional):');
+        console.error('                - "json"     : Only output JSON analysis (no logs)');
+        console.error('                - "analysis" : Only run local image analysis (with logs)');
+        console.error('                - "full"     : Run analysis + API integration (default)\n');
+        console.error('Examples:');
+        console.error('  node test-image-analysis.js ./assets/test-image.jpg json');
+        console.error('  node test-image-analysis.js ./assets/test-image.jpg analysis');
+        console.error('  node test-image-analysis.js ./assets/test-image.jpg full');
+        console.error('  node test-image-analysis.js ./assets/test-image.jpg\n');
+        process.exit(1);
     }
 
-    // --- 3. Pretty-print local analysis results ------------------------------
-    console.log('🎨 Local Analysis Results:\n');
-    console.log(JSON.stringify(analysis, null, 2));
-
-    console.log('\n📝 Searchable text:');
-    console.log(imageAnalysis.createSearchableText ? imageAnalysis.createSearchableText(analysis) : 'N/A');
-
-    console.log('\n🌈 Palette:', imageAnalysis.extractColorPalette ? imageAnalysis.extractColorPalette(analysis) : 'N/A');
-    console.log('📐 Layout traits:', imageAnalysis.extractLayoutTraits ? imageAnalysis.extractLayoutTraits(analysis) : 'N/A');
-    console.log('🔠 Text blocks:', imageAnalysis.extractTextBlocks ? imageAnalysis.extractTextBlocks(analysis) : 'N/A');
-
-    // --- 4. Test the new API route -------------------------------------------
-    console.log('\n' + '='.repeat(60));
-    const projectResult = await testImageAnalysisRoute(filePath);
-
-    // --- 5. Compare local vs API results -------------------------------------
-    console.log('\n🔍 Comparison Summary:');
-    console.log('-'.repeat(30));
-    console.log(`Local analysis elements: ${analysis.pages?.[0]?.elements?.length || 0}`);
-    console.log(`API analysis elements: ${projectResult.analysisData?.elements?.length || 0}`);
-    
-    console.log('\n✅ Test completed successfully!');
-    console.log(`Project created with ID: ${projectResult.project._id}`);
-
-  } catch (error) {
-    console.error('\n❌ Test failed:', error.message);
-    if (error.response?.data) {
-      console.error('API Error Details:', JSON.stringify(error.response.data, null, 2));
-    }
-    process.exit(1);
-  }
+    testImageAnalysisRoute(filePath);
 }
 
 main().catch(err => {
-  console.error('Unexpected error:', err);
-  process.exit(1);
+    console.error('Unexpected error:', err);
+    process.exit(1);
 });
