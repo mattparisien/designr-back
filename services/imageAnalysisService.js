@@ -1,246 +1,172 @@
+// imageAnalysisService.js – outputs Mongo‑friendly Page & Element layout
+// ---------------------------------------------------------------------------------
+//  Now returns:
+//  {
+//    pages: [
+//      {
+//        name: "Page 1",
+//        canvas: { width, height },
+//        background: { type:"color", value:"#ffffff" },
+//        elements: [
+//          { kind:"text", id:"...", x,y,width,height, rotation,opacity,zIndex, content,fontSize,fontFamily,textAlign,bold,italic,underline,color },
+//          { kind:"shape", id:"...", x,y,width,height, rotation,opacity,zIndex, shapeType, backgroundColor,borderColor,borderWidth }
+//        ]
+//      }
+//    ]
+//  }
+//  • Uses GPT‑4o for high‑level detection, then maps textBlocks→TextElement,
+//    shapes→ShapeElement according to your Mongoose discriminators.
+// ---------------------------------------------------------------------------------
 
 const OpenAI = require('openai');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
-const axios = require('axios');
+const sharp = require('sharp');
+const { randomUUID } = require('crypto');
 
 class ImageAnalysisService {
   constructor() {
-    this.openai = null;
+    this.openai      = null;
     this.initialized = false;
+    this.model       = 'gpt-4o-mini';
+    this.maxTokens   = 1100;
+    this.temperature = 0.3;
   }
 
+  /* ------------------------- 1. INIT ------------------------------------ */
   async initialize() {
-    try {
-      if (!process.env.OPENAI_API_KEY) {
-        console.warn('OpenAI API key not found. Image analysis will be disabled.');
-        return;
-      }
-
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY
-      });
-
-      this.initialized = true;
-      console.log('Image analysis service initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize image analysis service:', error);
-    }
+    if (this.initialized) return true;
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('OPENAI_API_KEY missing – analysis disabled');
+    this.openai      = new OpenAI({ apiKey: key });
+    this.initialized = true;
+    console.log('[ImageAnalysis] initialised');
+    return true;
   }
 
-  /**
-   * Analyze image content using OpenAI Vision API
-   * @param {string} imageUrl - URL of the image to analyze
-   * @returns {Object} Analysis results containing description, objects, colors, themes, etc.
-   */
-  async analyzeImage(imageUrl) {
-    if (!this.initialized || !this.openai) {
-      console.warn('Image analysis service not available');
-      return null;
-    }
+  /* ----------------------- 2. PUBLIC API -------------------------------- */
+  async analyzeImage(imageUrl, dims = null) {
+    await this.initialize();
+    const messages = this._buildPrompt(imageUrl);
+    const raw      = await this._callOpenAI(messages);
+    const parsed   = this._safeParseJSON(raw);
 
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini", // Using gpt-4o-mini for vision capabilities
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Please analyze this image and provide detailed information about its visual content. Return a JSON object with the following structure:
-{
-  "description": "A detailed description of what's in the image",
-  "objects": ["list", "of", "detected", "objects"],
-  "colors": ["dominant", "color", "names"],
-  "themes": ["visual", "themes", "or", "concepts"],
-  "mood": "overall mood or atmosphere",
-  "style": "artistic style or visual characteristics",
-  "text": "any text visible in the image",
-  "categories": ["broader", "category", "classifications"],
-  "composition": "description of layout and composition",
-  "lighting": "description of lighting conditions",
-  "setting": "location or environment if identifiable"
-}
+    // ensure single page
+    if (!parsed.pages || !parsed.pages.length) parsed.pages = [ {} ];
+    const page = parsed.pages[0];
 
-Focus on providing keywords and descriptions that would be useful for semantic search. Be specific about objects, colors, and visual elements.`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageUrl,
-                  detail: "high"
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 1000,
-        temperature: 0.3 // Lower temperature for more consistent results
-      });
+    // normalise hex
+    if (page.textBlocks) page.textBlocks = page.textBlocks.map(tb => ({ ...tb, color:(tb.color||'').toLowerCase() }));
+    if (page.shapes)     page.shapes     = page.shapes.map(sh => ({ ...sh, color:(sh.color||'').toLowerCase(), borderColor:(sh.borderColor||'').toLowerCase() }));
 
-      const analysisText = response.choices[0].message.content;
-      
-      // Try to parse the JSON response
-      let analysis;
-      try {
-        // Extract JSON from the response (in case there's extra text)
-        const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          analysis = JSON.parse(jsonMatch[0]);
-        } else {
-          // Fallback if no JSON structure is found
-          analysis = {
-            description: analysisText,
-            objects: [],
-            colors: [],
-            themes: [],
-            mood: "",
-            style: "",
-            text: "",
-            categories: [],
-            composition: "",
-            lighting: "",
-            setting: ""
-          };
-        }
-      } catch (parseError) {
-        console.warn('Failed to parse AI analysis as JSON, using raw text:', parseError);
-        analysis = {
-          description: analysisText,
-          objects: [],
-          colors: [],
-          themes: [],
-          mood: "",
-          style: "",
-          text: "",
-          categories: [],
-          composition: "",
-          lighting: "",
-          setting: ""
-        };
-      }
+    // inject dimensions
+    Object.assign(page, dims || {});
 
-      // Ensure all expected fields exist
-      const defaultAnalysis = {
-        description: "",
-        objects: [],
-        colors: [],
-        themes: [],
-        mood: "",
-        style: "",
-        text: "",
-        categories: [],
-        composition: "",
-        lighting: "",
-        setting: ""
-      };
-
-      return { ...defaultAnalysis, ...analysis };
-
-    } catch (error) {
-      console.error('Error analyzing image:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Analyze image from local file path
-   * @param {string} filePath - Local path to the image file
-   * @returns {Object} Analysis results
-   */
-  async analyzeLocalImage(filePath) {
-    if (!this.initialized || !this.openai) {
-      console.warn('Image analysis service not available');
-      return null;
-    }
-
-    try {
-      // Read the image file and convert to base64
-      const imageBuffer = fs.readFileSync(filePath);
-      const base64Image = imageBuffer.toString('base64');
-      const mimeType = this.getMimeTypeFromFile(filePath);
-      
-      const dataUrl = `data:${mimeType};base64,${base64Image}`;
-      
-      return await this.analyzeImage(dataUrl);
-    } catch (error) {
-      console.error('Error analyzing local image:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Get MIME type from file extension
-   * @param {string} filePath - Path to the file
-   * @returns {string} MIME type
-   */
-  getMimeTypeFromFile(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml'
-    };
-    return mimeTypes[ext] || 'image/jpeg';
-  }
-
-  /**
-   * Create searchable text from analysis results
-   * @param {Object} analysis - Analysis results from analyzeImage
-   * @returns {string} Searchable text for vectorization
-   */
-  createSearchableTextFromAnalysis(analysis) {
-    if (!analysis) return '';
-
-    const searchableElements = [
-      analysis.description,
-      ...(analysis.objects || []),
-      ...(analysis.colors || []),
-      ...(analysis.themes || []),
-      analysis.mood,
-      analysis.style,
-      analysis.text,
-      ...(analysis.categories || []),
-      analysis.composition,
-      analysis.lighting,
-      analysis.setting
+    // ------- map to Element structures ----------------------------------
+    page.elements = [
+      ...(page.textBlocks||[]).map(tb => this._mapTextBlockToElement(tb)),
+      ...(page.shapes||[]).map (sh => this._mapShapeToElement(sh))
     ];
 
-    return searchableElements
-      .filter(element => element && typeof element === 'string' && element.trim())
-      .join(' ')
-      .toLowerCase();
+    // Guess background colour if there is a full‑canvas rect or default white
+    page.background = this._deriveBackground(page);
+
+    // Name + canvas
+    page.name   = page.name || 'Page 1';
+    page.canvas = { width: page.width || 0, height: page.height || 0 };
+
+    // clean up extraneous keys if desired
+    delete page.textBlocks;
+    delete page.shapes;
+
+    return { pages: [ page ] };
   }
 
-  /**
-   * Extract color palette from analysis
-   * @param {Object} analysis - Analysis results
-   * @returns {Array} Array of color names
-   */
-  extractColorPalette(analysis) {
-    if (!analysis || !analysis.colors) return [];
-    return analysis.colors.filter(color => color && typeof color === 'string');
+  async analyzeLocalImage(filePath) {
+    await this.initialize();
+    const buffer = fs.readFileSync(filePath);
+    const { width, height } = await sharp(buffer).metadata();
+    const aspectRatio = width && height ? `${width}:${height}` : '';
+    const dataUrl = `data:${this._mimeFromExt(filePath)};base64,${buffer.toString('base64')}`;
+    return this.analyzeImage(dataUrl, { width, height, aspectRatio });
   }
 
-  /**
-   * Extract themes and categories for better organization
-   * @param {Object} analysis - Analysis results
-   * @returns {Object} Organized themes and categories
-   */
-  extractThemesAndCategories(analysis) {
-    if (!analysis) return { themes: [], categories: [] };
-    
+  /* ------------------- 3. MAPPING HELPERS ------------------------------ */
+  _mapTextBlockToElement(tb){
     return {
-      themes: (analysis.themes || []).filter(theme => theme && typeof theme === 'string'),
-      categories: (analysis.categories || []).filter(cat => cat && typeof cat === 'string')
+      kind:       'text',
+      id:         randomUUID(),
+      x:          tb.x,
+      y:          tb.y,
+      width:      tb.width,
+      height:     tb.height,
+      rotation:   0,
+      opacity:    1,
+      zIndex:     1,
+      content:    tb.text,
+      fontSize:   tb.fontSizeEstimate,
+      fontFamily: 'inherit',
+      textAlign:  tb.alignment || 'left',
+      bold:       /bold|extra/i.test(tb.fontWeight||''),
+      italic:     false,
+      underline:  false,
+      color:      tb.color || '#000000'
     };
   }
+
+  _mapShapeToElement(sh){
+    return {
+      kind:           'shape',
+      id:             randomUUID(),
+      x:              sh.x,
+      y:              sh.y,
+      width:          sh.width,
+      height:         sh.height,
+      rotation:       0,
+      opacity:        1,
+      zIndex:         0,
+      shapeType:      sh.shapeType === 'background' ? 'rect' : (sh.shapeType||'rect'),
+      backgroundColor:sh.color || '#ffffff',
+      borderColor:    sh.borderColor || '#000000',
+      borderWidth:    sh.borderWidth || 0
+    };
+  }
+
+  _deriveBackground(page){
+    const bgShape = (page.elements||[]).find(e => e.kind==='shape' && e.shapeType==='rect' && e.x===0 && e.y===0 && e.width>=page.width-1 && e.height>=page.height-1);
+    if (bgShape) return { type:'color', value:bgShape.backgroundColor };
+    return { type:'color', value:'#ffffff' };
+  }
+
+  /* ---------------------- 4. PROMPT / OPENAI --------------------------- */
+  _buildPrompt(imageUrl){
+    const pageSchema = `{
+      description:string, objects:string[], colors:string[], themes:string[], mood:string, style:string,
+      text:string, categories:string[], composition:string, lighting:string, setting:string,
+      textBlocks:[{ text:string, fontSizeEstimate:number, fontWeight:string, textTransform:string, alignment:string, color:string, x:number, y:number, width:number, height:number }],
+      shapes:[{ shapeType:string, color:string, borderColor:string, borderWidth:number, x:number, y:number, width:number, height:number }],
+      fontFamilies:string[], fontSizes:number[]
+    }`;
+
+    const schema = `{ pages:[ ${pageSchema} ] }`;
+
+    return [
+      { role:'system', content:'You are a vision analysis tool that MUST return JSON strictly matching the schema.' },
+      { role:'user', content:[
+        { type:'text', text:`Analyse the image and respond with JSON. All colour values MUST be 7‑char HEX (#rrggbb) in lowercase.\n\n${schema}` },
+        { type:'image_url', image_url:{ url:imageUrl, detail:'high' } }
+      ]}
+    ];
+  }
+
+  async _callOpenAI(messages){
+    const res = await this.openai.chat.completions.create({ model:this.model, messages, max_tokens:this.maxTokens, temperature:this.temperature });
+    return res.choices?.[0]?.message?.content || '';
+  }
+
+  _safeParseJSON(raw){ try{return JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0]||'{}');}catch{ return { pages:[{}] }; } }
+
+  _mimeFromExt(fp){ return ({'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml'})[path.extname(fp).toLowerCase()]||'image/jpeg'; }
 }
 
-// Export singleton instance
-const imageAnalysisService = new ImageAnalysisService();
-module.exports = imageAnalysisService;
+module.exports = new ImageAnalysisService();

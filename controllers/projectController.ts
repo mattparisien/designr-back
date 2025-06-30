@@ -9,6 +9,8 @@ import * as LayoutModule from '../models/Page'; // Page.ts exports Layout model
 import { processProjectThumbnail } from '../utils/thumbnailProcessor';
 import templateVectorService from '../services/templateVectorService';
 import { getPresetsList } from '../config/projectPresets';
+const imageAnalysisService = require('../services/imageAnalysisService');
+const Asset = require('../models/Asset');
 
 // Extract the default exports
 const Project = (ProjectModule as any).default || ProjectModule;
@@ -144,7 +146,6 @@ export const getProjectById = async (req: any, res: any) => {
  *   { title, ownerId, type, tags?, layout?, presetId? }
  */
 export const createProject = async (req: any, res: any) => {
-  console.log('made it here!');
   try {
     const { layout: layoutPayload, presetId, ...meta } = req.body;
 
@@ -704,13 +705,135 @@ async function vectorizeTemplate(doc: any, isTemplate: boolean = false) {
   }
 }
 
+/**
+ * Create a project from image analysis
+ * Takes an asset ID, runs image analysis, and creates a project with the analyzed layout
+ */
+export const createProjectFromImage = async (req: any, res: any) => {
+  try {
+    const { assetId, title, ownerId, type = 'custom', tags = [] } = req.body;
+
+    if (!assetId) {
+      return res.status(400).json({ message: 'Asset ID is required' });
+    }
+
+    // 1️⃣ Get the asset
+    const asset = await Asset.findById(assetId);
+    if (!asset) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+
+    // 2️⃣ Verify it's an image
+    if (asset.type !== 'image') {
+      return res.status(400).json({ message: 'Asset must be an image' });
+    }
+
+    // 3️⃣ Get image URL for analysis
+    const imageUrl = asset.cloudinaryUrl || asset.url;
+    if (!imageUrl) {
+      return res.status(400).json({ message: 'Asset has no accessible URL for analysis' });
+    }
+
+    console.log('Starting image analysis for project creation:', asset.name);
+
+    // 4️⃣ Run image analysis
+    const analysis = await imageAnalysisService.analyzeImage(imageUrl);
+    
+    if (!analysis || !analysis.pages || !analysis.pages.length) {
+      return res.status(500).json({ message: 'Failed to analyze image or no content detected' });
+    }
+
+    // 5️⃣ Prepare layout from analysis
+    const analyzedPage = analysis.pages[0]; // Take the first (and likely only) page
+    
+    const layoutPayload = {
+      pages: [{
+        name: analyzedPage.name || 'Analyzed Page',
+        canvas: {
+          width: analyzedPage.canvas?.width || 800,
+          height: analyzedPage.canvas?.height || 600
+        },
+        background: analyzedPage.background || { type: 'color', value: '#ffffff' },
+        elements: analyzedPage.elements || []
+      }]
+    };
+
+    console.log('Created layout from analysis:', JSON.stringify(layoutPayload, null, 2));
+
+    // 6️⃣ Create layout document
+    const layoutDoc = await Layout.create(layoutPayload);
+    if (!layoutDoc) {
+      return res.status(500).json({ message: 'Failed to create layout from analysis' });
+    }
+
+    // 7️⃣ Prepare project metadata
+    const projectTitle = title || `Project from ${asset.name}`;
+    const projectMeta = {
+      title: projectTitle,
+      description: `Project created from image analysis of ${asset.name}`,
+      type,
+      tags: Array.isArray(tags) ? tags : [tags].filter(Boolean),
+      ownerId
+    };
+
+    // 8️⃣ Process thumbnail (reuse existing thumbnail processing)
+    const thumbnailProcessed = await processProjectThumbnail(projectMeta, ownerId);
+    if (!thumbnailProcessed) {
+      return res.status(400).json({ message: 'Failed to process thumbnail' });
+    }
+
+    // 9️⃣ Handle ownerId conversion
+    let processedOwnerId = (thumbnailProcessed as any).ownerId;
+    if (processedOwnerId && typeof processedOwnerId === 'string') {
+      if (isObjectId(processedOwnerId)) {
+        processedOwnerId = new mongoose.Types.ObjectId(processedOwnerId);
+      } else {
+        processedOwnerId = new mongoose.Types.ObjectId();
+        console.warn(`Warning: Creating dummy ObjectId for invalid ownerId: ${(thumbnailProcessed as any).ownerId}`);
+      }
+    }
+
+    // 🔟 Create the project
+    const project = await Project.create({
+      ...thumbnailProcessed,
+      ownerId: processedOwnerId,
+      layoutId: layoutDoc._id,
+      sourceAssetId: assetId // Track which asset this was created from
+    });
+
+    if (!project) {
+      return res.status(500).json({ message: 'Failed to create project' });
+    }
+
+    // 1️⃣1️⃣ Vectorize the project for future template matching
+    await vectorizeTemplate(project);
+
+    console.log('Project created successfully from image analysis:', project.title);
+
+    res.status(201).json({
+      project,
+      analysisData: analyzedPage,
+      message: 'Project created successfully from image analysis'
+    });
+
+  } catch (err: any) {
+    console.error('createProjectFromImage error', err);
+    return res.status(500).json({ 
+      message: 'Failed to create project from image analysis', 
+      error: err.message 
+    });
+  }
+};
+
 
 // Default export for CommonJS compatibility
 export default {
   getProjects,
   getPaginatedProjects,
+  getProjectPresets,
   getProjectById,
   createProject,
+  createProjectFromImage,
   updateProject,
   deleteProject,
   cloneProject,
