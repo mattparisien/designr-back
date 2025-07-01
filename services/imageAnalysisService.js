@@ -9,9 +9,11 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { randomUUID } = require('crypto');
+const OCR = require('./ocrService'); // Assuming OCR service is defined in ocrService.js
 
 class ImageAnalysisService {
-  constructor() {
+  constructor(ocr = OCR) {
+    this.ocr = ocr;
     this.openai = null;
     this.initialized = false;
     this.model = 'gpt-4o-mini';
@@ -35,82 +37,178 @@ class ImageAnalysisService {
     try {
       const infoUrl = url.replace(/\/upload\//, '/upload/fl_getinfo/');
       const res = await fetch(infoUrl);
-      console.log('is res ok', res.ok);
       if (res.ok) {
-        const { input, output }  = await res.json();
-        console.log('Cloudinary dimensions:', width, height);
+        const { input, output } = await res.json();
+        console.log('input', input);
+
         if (input.width && input.height) return { width: input.width, height: input.height, aspectRatio: `${input.width}:${input.height}` };
       }
-    } catch {}
+    } catch { }
 
     // Fallback to probe-image-size
     try {
       const probe = (await import('probe-image-size')).default;
       const { width, height } = await probe(url);
       if (width && height) return { width, height, aspectRatio: `${width}:${height}` };
-    } catch {}
+    } catch { }
 
     return null;
   }
 
   /* ----------------------- 2. PUBLIC API -------------------------------- */
-  async analyzeImage(imageUrl, dims = null) {
-    await this.initialize();
+async analyzeImage(imageUrl, dims = null) {
+  await this.initialize();
 
-    if (!dims) dims = await this._getRemoteDims(imageUrl);
+  /* ---------- 1.  Dimensions -------------------------------------------- */
+  if (!dims) dims = await this._getRemoteDims(imageUrl);
 
-    const messages = this._buildPrompt(imageUrl);
-    const raw = await this._callOpenAI(messages);
-    const parsed = this._safeParseJSON(raw);
+  /* ---------- 2.  Kick off GPT-Vision & OCR in parallel ----------------- */
+  const llmPromise = this._callOpenAI(this._buildPrompt(imageUrl, dims));
 
-    if (!parsed.pages || !parsed.pages.length) parsed.pages = [{}];
-    const page = parsed.pages[0];
+  const ocrPromise = (this.ocr && typeof this.ocr.detectLines === 'function')
+    ? this.ocr.detectLines(imageUrl).catch(e => {         // swallow OCR errors
+        console.warn('[OCR] failed => continue without:', e.message);
+        return [];                                        // <- must be array
+      })
+    : Promise.resolve([]);                                // OCR disabled
 
-    // normalise colours
-    if (page.textBlocks) page.textBlocks = page.textBlocks.map(tb => ({ ...tb, color: (tb.color || '').toLowerCase() }));
-    if (page.shapes) page.shapes = page.shapes.map(sh => ({ ...sh, color: (sh.color || '').toLowerCase(), borderColor: (sh.borderColor || '').toLowerCase() }));
+  const [ocrLinesRaw, llmRaw] = await Promise.all([ocrPromise, llmPromise]);
 
-    Object.assign(page, dims || {});
+  /* ---------- 3.  Parse GPT answer safely ------------------------------- */
+  const parsed = this._safeParseJSON(llmRaw) ?? {};
+  const pages  = Array.isArray(parsed.pages) ? parsed.pages : [];
 
-    // map to element structures
-    page.elements = [
-      ...(page.textBlocks || []).map(tb => this._mapTextBlockToElement(tb)),
-      ...(page.shapes || []).map(sh => this._mapShapeToElement(sh))
-    ];
-
-    page.background = this._deriveBackground(page);
-    page.name = page.name || 'Page 1';
-    page.canvas = { width: page.width || 0, height: page.height || 0 };
-
-    delete page.textBlocks;
-    delete page.shapes;
-
-    return { pages: [page] };
+  if (!pages.length) {                                    // still nothing?
+    throw new Error('GPT-Vision did not return a pages[] array');
   }
+
+  const page = pages[0];
+
+  /* ---------- 4.  Normalise/defend arrays ------------------------------- */
+  page.textBlocks = Array.isArray(page.textBlocks) ? page.textBlocks : [];
+  page.shapes     = Array.isArray(page.shapes)     ? page.shapes     : [];
+
+  const ocrLines  = Array.isArray(ocrLinesRaw)    ? ocrLinesRaw     : [];
+  console.log('the ocr lines', ocrLines);
+
+  /* ---------- 5.  Lower-case colours & merge OCR positioning data ------- */
+  const toHex = c => (c || '').toLowerCase();
+  page.textBlocks = page.textBlocks.map(tb => ({ ...tb, color: toHex(tb.color) }));
+  page.shapes     = page.shapes.map(sh => ({
+    ...sh,
+    color:       toHex(sh.color),
+    borderColor: toHex(sh.borderColor)
+  }));
+
+  if (ocrLines.length && page.textBlocks.length) {
+    const δ = 20;                                        // pixel tolerance for matching
+    page.textBlocks.forEach(tb => {
+      // Find OCR line that matches this text block (by position or content)
+      const hit = ocrLines.find(l => {
+        // Try to match by position first
+        const positionMatch = Math.abs(l.x - tb.x) < δ && Math.abs(l.y - tb.y) < δ;
+        // Try to match by text content if position doesn't work
+        const textMatch = l.text && tb.text && 
+          l.text.toLowerCase().includes(tb.text.toLowerCase().substring(0, 10));
+        return positionMatch || textMatch;
+      });
+      
+      if (hit) {
+        console.log(`🔍 OCR Override: "${tb.text}" -> x:${hit.x}, y:${hit.y}, fontPx:${hit.fontPx}`);
+        // Override positioning data from OCR (x, y, fontPx only - let frontend handle width/height)
+        tb.x = hit.x;
+        tb.y = hit.y;
+        tb.fontSizeEstimate = hit.fontPx;
+      }
+    });
+    
+    // Add any OCR-detected text that OpenAI missed
+    const usedOcrLines = new Set();
+    page.textBlocks.forEach(tb => {
+      const hit = ocrLines.find(l => {
+        const positionMatch = Math.abs(l.x - tb.x) < δ && Math.abs(l.y - tb.y) < δ;
+        const textMatch = l.text && tb.text && 
+          l.text.toLowerCase().includes(tb.text.toLowerCase().substring(0, 10));
+        return positionMatch || textMatch;
+      });
+      if (hit) usedOcrLines.add(hit);
+    });
+    
+    // Create text blocks for unused OCR lines
+    const ocrOnlyTextBlocks = ocrLines
+      .filter(line => !usedOcrLines.has(line) && line.text?.trim())
+      .map(line => ({
+        text: line.text.trim(),
+        x: line.x,
+        y: line.y,
+        width: line.w || this._estimateTextWidth(line.text.trim(), line.fontPx || 16),
+        height: line.h || Math.round((line.fontPx || 16) * 1.2), // Line height approximation
+        fontSizeEstimate: line.fontPx,
+        alignment: 'left',
+        fontWeight: 'normal',
+        color: '#000000'  // default color
+      }));
+    
+    page.textBlocks.push(...ocrOnlyTextBlocks);
+    console.log(`📝 Added ${ocrOnlyTextBlocks.length} OCR-only text blocks`);
+  }
+
+  /* ---------- 6.  Assign dimensions & normalize positioning ------------- */
+  Object.assign(page, dims || {});
+  
+  // Normalize positioning to ensure elements fit within canvas
+  if (page.width && page.height) {
+    page.textBlocks = this._normalizeElementPositions(page.textBlocks, page.width, page.height);
+    page.shapes = this._normalizeElementPositions(page.shapes, page.width, page.height);
+  }
+
+  /* ---------- 7.  Map to element schema --------------------------------- */
+  page.elements = [
+    ...page.textBlocks.map(tb => this._mapTextBlockToElement(tb)),
+    ...page.shapes    .map(sh => this._mapShapeToElement(sh))
+  ];
+
+  page.background = this._deriveBackground(page);
+  page.name       = page.name || 'Page 1';
+  page.canvas     = { width: page.width || 0, height: page.height || 0 };
+
+  /* ---------- 7.  Clean-up & return ------------------------------------- */
+  delete page.textBlocks;
+  delete page.shapes;
+
+  return { pages: [page] };
+}
+
+
 
   async analyzeLocalImage(filePath) {
     await this.initialize();
     const buffer = fs.readFileSync(filePath);
     const { width, height } = await sharp(buffer).metadata();
     const aspectRatio = width && height ? `${width}:${height}` : '';
+    const dimensions = { width, height, aspectRatio };
     const dataUrl = `data:${this._mimeFromExt(filePath)};base64,${buffer.toString('base64')}`;
-    return this.analyzeImage(dataUrl, { width, height, aspectRatio });
+    return this.analyzeImage(dataUrl, dimensions);
   }
 
   /* ------------------- 3. MAPPING HELPERS ------------------------------ */
   _mapTextBlockToElement(tb) {
+    // Ensure valid width and height - estimate if not provided
+    const estimatedWidth = tb.width || this._estimateTextWidth(tb.text || '', tb.fontSizeEstimate || 16);
+    const estimatedHeight = tb.height || Math.round((tb.fontSizeEstimate || 16) * 1.2);
+    
     return {
       kind: 'text',
       id: randomUUID(),
-      x: tb.x,
-      y: tb.y,
-      width: tb.width,
-      height: tb.height,
+      x: tb.x || 0,
+      y: tb.y || 0,
+      width: Math.max(estimatedWidth, 20), // Minimum width of 20px
+      height: Math.max(estimatedHeight, 16), // Minimum height of 16px
       rotation: 0,
       opacity: 1,
       zIndex: 1,
-      content: tb.text,
-      fontSize: tb.fontSizeEstimate,
+      content: tb.text || '',
+      fontSize: tb.fontSizeEstimate || 16,
       fontFamily: 'inherit',
       textAlign: tb.alignment || 'left',
       bold: /bold|extra/i.test(tb.fontWeight || ''),
@@ -121,13 +219,17 @@ class ImageAnalysisService {
   }
 
   _mapShapeToElement(sh) {
+    // Ensure valid width and height for shapes
+    const shapeWidth = Math.max(sh.width || 100, 10); // Minimum width of 10px, default 100px
+    const shapeHeight = Math.max(sh.height || 100, 10); // Minimum height of 10px, default 100px
+    
     return {
       kind: 'shape',
       id: randomUUID(),
-      x: sh.x,
-      y: sh.y,
-      width: sh.width,
-      height: sh.height,
+      x: sh.x || 0,
+      y: sh.y || 0,
+      width: shapeWidth,
+      height: shapeHeight,
       rotation: 0,
       opacity: 1,
       zIndex: 0,
@@ -143,8 +245,130 @@ class ImageAnalysisService {
     return bg ? { type: 'color', value: bg.backgroundColor } : { type: 'color', value: '#ffffff' };
   }
 
+  /* ------------------- 4. POSITIONING HELPERS -------------------------- */
+  _normalizeElementPositions(elements, canvasWidth, canvasHeight) {
+    if (!elements || !Array.isArray(elements) || !canvasWidth || !canvasHeight) {
+      return elements || [];
+    }
+
+    // Sort elements by their original y position to maintain reading order
+    const sortedElements = [...elements].sort((a, b) => (a.y || 0) - (b.y || 0));
+
+    return sortedElements.map((element, index) => {
+      const normalized = { ...element };
+      
+      // Basic bounds checking
+      if (normalized.x < 0) normalized.x = 20;
+      if (normalized.y < 0) normalized.y = 20;
+      
+      // Handle elements positioned way outside canvas
+      if (normalized.x > canvasWidth * 0.9) {
+        console.log(`📍 Element "${normalized.text || normalized.shapeType}" positioned outside canvas (x:${normalized.x})`);
+        normalized.x = canvasWidth * 0.1; // Move to 10% from left
+      }
+      
+      if (normalized.y > canvasHeight * 0.9) {
+        console.log(`📍 Element "${normalized.text || normalized.shapeType}" positioned outside canvas (y:${normalized.y})`);
+        normalized.y = canvasHeight * 0.1; // Move to 10% from top
+      }
+
+      // Special handling for text elements
+      if (normalized.text) {
+        // Detect and fix common poor positioning patterns
+        this._applyTextPositioningRules(normalized, canvasWidth, canvasHeight, index, sortedElements.length);
+      }
+
+      // Special handling for shape elements
+      if (normalized.shapeType && normalized.shapeType !== 'background') {
+        this._applyShapePositioningRules(normalized, canvasWidth, canvasHeight);
+      }
+      
+      return normalized;
+    });
+  }
+
+  _applyTextPositioningRules(textElement, canvasWidth, canvasHeight, elementIndex, totalElements) {
+    const minPadding = Math.max(20, Math.min(canvasWidth, canvasHeight) * 0.02); // 2% of smallest dimension, min 20px
+    
+    // Rule 1: Fix origin positioning (common AI mistake)
+    if (textElement.x <= 5 && textElement.y <= 5) {
+      console.log(`📍 Moving text "${textElement.text}" from origin to proper position`);
+      
+      // For headlines (larger font), center horizontally and place near top
+      if ((textElement.fontSizeEstimate || 16) > canvasHeight * 0.05) {
+        textElement.x = canvasWidth * 0.1; // 10% from left for headlines
+        textElement.y = canvasHeight * 0.15; // 15% from top
+      } else {
+        // For body text, place with more margin
+        textElement.x = canvasWidth * 0.1;
+        textElement.y = canvasHeight * 0.25 + (elementIndex * canvasHeight * 0.1);
+      }
+    }
+
+    // Rule 2: Ensure minimum padding from edges
+    if (textElement.x < minPadding) textElement.x = minPadding;
+    if (textElement.y < minPadding) textElement.y = minPadding;
+
+    // Rule 3: Prevent text overflow on the right
+    const estimatedTextWidth = this._estimateTextWidth(textElement.text, textElement.fontSizeEstimate || 16);
+    if (textElement.x + estimatedTextWidth > canvasWidth - minPadding) {
+      const newX = Math.max(minPadding, canvasWidth - estimatedTextWidth - minPadding);
+      console.log(`📍 Adjusted text "${textElement.text}" x position from ${textElement.x} to ${newX} to prevent overflow`);
+      textElement.x = newX;
+    }
+
+    // Rule 4: Prevent text from going off bottom
+    const estimatedTextHeight = (textElement.fontSizeEstimate || 16) * 1.2; // Line height approximation
+    if (textElement.y + estimatedTextHeight > canvasHeight - minPadding) {
+      const newY = Math.max(minPadding, canvasHeight - estimatedTextHeight - minPadding);
+      console.log(`📍 Adjusted text "${textElement.text}" y position from ${textElement.y} to ${newY} to prevent bottom overflow`);
+      textElement.y = newY;
+    }
+
+    // Rule 5: Apply layout patterns based on text characteristics
+    const isHeadline = (textElement.fontSizeEstimate || 16) > canvasHeight * 0.04;
+    const isShortText = textElement.text.length < 20;
+    
+    if (isHeadline && isShortText) {
+      // Center short headlines horizontally
+      const textWidth = this._estimateTextWidth(textElement.text, textElement.fontSizeEstimate || 16);
+      const centeredX = (canvasWidth - textWidth) / 2;
+      if (centeredX > minPadding && centeredX + textWidth < canvasWidth - minPadding) {
+        textElement.x = centeredX;
+        console.log(`📍 Centered headline "${textElement.text}" horizontally`);
+      }
+    }
+  }
+
+  _applyShapePositioningRules(shapeElement, canvasWidth, canvasHeight) {
+    const minPadding = 10;
+    
+    // Ensure shapes are within bounds
+    if (shapeElement.x < 0) shapeElement.x = minPadding;
+    if (shapeElement.y < 0) shapeElement.y = minPadding;
+    
+    // If shape dimensions extend beyond canvas, adjust
+    const shapeWidth = shapeElement.width || 100;
+    const shapeHeight = shapeElement.height || 100;
+    
+    if (shapeElement.x + shapeWidth > canvasWidth) {
+      shapeElement.x = Math.max(minPadding, canvasWidth - shapeWidth - minPadding);
+    }
+    
+    if (shapeElement.y + shapeHeight > canvasHeight) {
+      shapeElement.y = Math.max(minPadding, canvasHeight - shapeHeight - minPadding);
+    }
+  }
+
+  _estimateTextWidth(text, fontSize) {
+    if (!text || !fontSize) return 0;
+    // Simple text width estimation: average character is about 0.6x the font size
+    return text.length * fontSize * 0.6;
+  }
+
   /* ---------------------- 4. PROMPT / OPENAI --------------------------- */
-  _buildPrompt(imageUrl) {
+  _buildPrompt(imageUrl, dimensions = null) {
+
     const pageSchema = `{
       description:string, objects:string[], colors:string[], themes:string[], mood:string, style:string,
       text:string, categories:string[], composition:string, lighting:string, setting:string,
@@ -155,12 +379,17 @@ class ImageAnalysisService {
 
     const schema = `{ pages:[ ${pageSchema} ] }`;
 
+    // Build dimension context for the AI
+    const dimensionContext = dimensions
+      ? `The image dimensions are ${dimensions.width}x${dimensions.height} pixels. Please ensure all fontSizeEstimate values are relative to these dimensions (e.g., a large headline might be 4-6% of the image height, body text might be 1-3% of the image height).`
+      : 'Please estimate font sizes relative to the image dimensions.';
+
     return [
-      { role: 'system', content: 'You are a vision analysis tool that MUST return JSON strictly matching the schema.' },
+      { role: 'system', content: 'You are a vision analysis tool that MUST return JSON strictly matching the schema. When estimating font sizes, consider them relative to the image dimensions.' },
       {
         role: 'user',
         content: [
-          { type: 'text', text: `Analyse the image and respond with JSON. All colour values MUST be 7‑char HEX (#rrggbb) in lowercase.\n\n${schema}` },
+          { type: 'text', text: `Analyse the image and respond with JSON. All colour values MUST be 7‑char HEX (#rrggbb) in lowercase. ${dimensionContext}\n\n${schema}` },
           { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } }
         ]
       }

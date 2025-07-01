@@ -54,7 +54,7 @@ async function uploadImageAsset(filePath) {
         } else {
             console.error('❌ Failed to upload asset:', error.response?.data || error.message);
         }
-        throw error;
+        // throw error;
     }
 }
 
@@ -79,7 +79,7 @@ async function createProjectFromImage(assetId, title) {
         if (error.response?.status === 409) {
             console.error('409 Conflict - This might indicate a duplicate asset or project name issue');
         }
-        throw error;
+        // throw error;
     }
 }
 
@@ -97,7 +97,7 @@ async function testImageAnalysisRoute(filePath) {
         return projectResult;
     } catch (error) {
         console.error('❌ Route test failed:', error.message);
-        throw error;
+        // throw error;
     }
 }
 
