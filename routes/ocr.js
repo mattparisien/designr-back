@@ -5,8 +5,16 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const ocrService = require('../services/ocrService');
+const imageAnalysisService = require('../services/imageAnalysisService');
 
 const router = express.Router();
+
+// Middleware for tracking request processing time
+router.use((req, res, next) => {
+  req.timeStart = Date.now();
+  next();
+});
+
 
 // Configure multer for file uploads
 const upload = multer({
@@ -56,12 +64,39 @@ router.post('/analyze', async (req, res) => {
       console.warn('Could not get image dimensions:', dimError.message);
     }
 
+    // Run color analysis with GPT
+    console.log('🎨 Starting color analysis...');
+    let colorAnalysis = null;
+    try {
+      colorAnalysis = await imageAnalysisService.analyzeImageColors(imageUrl);
+      console.log('✅ Color analysis completed.');
+    } catch (colorError) {
+      console.warn('Color analysis failed:', colorError.message);
+      // Provide default color analysis if GPT fails
+      colorAnalysis = {
+        backgroundColor: '#ffffff',
+        backgroundStyle: 'solid',
+        dominantColors: ['#000000', '#ffffff'],
+        textColors: ['#000000'],
+        accentColors: [],
+        colorScheme: 'neutral',
+        styleCharacteristics: ['modern'],
+        hasBackgroundImage: false,
+        backgroundDescription: 'Color analysis unavailable',
+        contrastLevel: 'medium',
+        colorTemperature: 'neutral',
+        error: colorError.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+
     console.log(`✅ OCR analysis completed. Found ${ocrResults.length} text blocks.`);
 
     res.json({
       success: true,
       ocrResults,
       imageDimensions,
+      colorAnalysis,
       timestamp: new Date().toISOString()
     });
 
@@ -106,12 +141,39 @@ router.post('/analyze-file', upload.single('image'), async (req, res) => {
         console.warn('Could not get image dimensions:', dimError.message);
       }
 
+      // Run color analysis with GPT
+      console.log('🎨 Starting color analysis...');
+      let colorAnalysis = null;
+      try {
+        colorAnalysis = await imageAnalysisService.analyzeImageColors(filePath);
+        console.log('✅ Color analysis completed.');
+      } catch (colorError) {
+        console.warn('Color analysis failed:', colorError.message);
+        // Provide default color analysis if GPT fails
+        colorAnalysis = {
+          backgroundColor: '#ffffff',
+          backgroundStyle: 'solid',
+          dominantColors: ['#000000', '#ffffff'],
+          textColors: ['#000000'],
+          accentColors: [],
+          colorScheme: 'neutral',
+          styleCharacteristics: ['modern'],
+          hasBackgroundImage: false,
+          backgroundDescription: 'Color analysis unavailable',
+          contrastLevel: 'medium',
+          colorTemperature: 'neutral',
+          error: colorError.message,
+          timestamp: new Date().toISOString()
+        };
+      }
+
       console.log(`✅ OCR analysis completed. Found ${ocrResults.length} text blocks.`);
 
       res.json({
         success: true,
         ocrResults,
         imageDimensions,
+        colorAnalysis,
         filename: req.file.originalname,
         timestamp: new Date().toISOString()
       });
@@ -228,6 +290,83 @@ router.post('/save-analysis', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to save OCR analysis: ' + error.message
+    });
+  }
+});
+
+/**
+ * POST /api/ocr/debug-color-analysis
+ * Debug endpoint to test just the color analysis functionality
+ */
+router.post('/debug-color-analysis', upload.single('image'), async (req, res) => {
+  try {
+    // Accept either a file upload or a URL
+    let targetPath = null;
+    let source = 'unknown';
+    
+    if (req.file) {
+      targetPath = req.file.path;
+      source = 'upload';
+      console.log(`📋 Debug color analysis for uploaded file: ${req.file.originalname}`);
+    } else if (req.body.imageUrl) {
+      targetPath = req.body.imageUrl;
+      source = 'url';
+      console.log(`📋 Debug color analysis for URL: ${targetPath}`);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Either upload a file or provide an imageUrl in the request body'
+      });
+    }
+
+    console.log('🎨 Starting debug color analysis...');
+    
+    try {
+      // Call just the color analysis function
+      const colorAnalysis = await imageAnalysisService.analyzeImageColors(targetPath);
+      
+      console.log('✅ Debug color analysis completed successfully.');
+      
+      // Return detailed result including GPT model used and other diagnostics
+      res.json({
+        success: true,
+        source,
+        sourceType: req.file ? req.file.mimetype : 'remote-url',
+        colorAnalysis,
+        diagnostics: {
+          timestamp: new Date().toISOString(),
+          modelUsed: imageAnalysisService.model || 'unknown',
+          processingTime: `${Date.now() - req.timeStart}ms`
+        }
+      });
+      
+    } catch (colorError) {
+      console.error('🔴 Debug color analysis error:', colorError);
+      res.status(500).json({
+        success: false,
+        error: colorError.message,
+        errorType: colorError.name,
+        errorStack: colorError.stack,
+        source,
+        timestamp: new Date().toISOString()
+      });
+    } finally {
+      // Clean up uploaded file if any
+      if (req.file?.path) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupError) {
+          console.warn('Could not clean up uploaded file:', cleanupError.message);
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('Debug route general error:', error);
+    res.status(500).json({
+      success: false,
+      error: `Debug endpoint error: ${error.message}`,
+      timestamp: new Date().toISOString()
     });
   }
 });

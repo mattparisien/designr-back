@@ -402,6 +402,174 @@ class ImageAnalysisService {
       '.svg': 'image/svg+xml'
     }[path.extname(fp).toLowerCase()] || 'image/jpeg';
   }
+
+  /* ------------------- GPT COLOR & STYLE ANALYSIS -------------------- */
+  async analyzeImageColors(imagePath) {
+    await this.initialize();
+    
+    try {
+      // Convert image to base64 for GPT analysis
+      let base64Image;
+      let imageBuffer;
+      
+      if (imagePath.startsWith('http')) {
+        // Handle remote URL
+        const response = await fetch(imagePath);
+        imageBuffer = Buffer.from(await response.arrayBuffer());
+      } else {
+        // Handle local file
+        imageBuffer = fs.readFileSync(imagePath);
+      }
+      
+      // Optimize image size for GPT (max 20MB, but smaller is better for speed)
+      const optimizedBuffer = await sharp(imageBuffer)
+        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      
+      base64Image = optimizedBuffer.toString('base64');
+      
+      const prompt = `Analyze this image and provide detailed color and styling information in JSON format. Focus on:
+
+1. Background Colors: What are the dominant background colors? Include gradients if present.
+2. Text Colors: What colors are used for text elements?
+3. Accent Colors: What accent or highlight colors are present?
+4. Overall Color Scheme: Describe the color palette (warm, cool, monochromatic, complementary, etc.)
+5. Styling Characteristics: Modern, vintage, professional, playful, etc.
+
+IMPORTANT: Return ONLY a valid JSON object WITHOUT any markdown formatting, code blocks, or backticks.
+Just return the raw JSON data in this exact structure:
+
+{
+  "backgroundColor": "hex color or gradient description",
+  "backgroundStyle": "solid/gradient/pattern/image",
+  "dominantColors": ["#hex1", "#hex2", "#hex3"],
+  "textColors": ["#hex1", "#hex2"],
+  "accentColors": ["#hex1", "#hex2"],
+  "colorScheme": "description of overall palette",
+  "styleCharacteristics": ["modern", "clean", "professional"],
+  "hasBackgroundImage": true/false,
+  "backgroundDescription": "detailed description of background",
+  "contrastLevel": "high/medium/low",
+  "colorTemperature": "warm/cool/neutral"
+}`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`,
+                  detail: 'low' // Use 'low' for faster processing
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 800,
+        temperature: 0.1 // Low temperature for consistent results
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from GPT');
+      }
+
+      // Clean content - sometimes GPT adds markdown code blocks
+      let cleanedContent = content.trim();
+      
+      // Check if the content starts with a markdown code block and remove it
+      if (cleanedContent.startsWith('```')) {
+        // Find the first occurrence of JSON content
+        const jsonStart = cleanedContent.indexOf('{');
+        const jsonEnd = cleanedContent.lastIndexOf('}') + 1;
+        
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+          cleanedContent = cleanedContent.substring(jsonStart, jsonEnd);
+        } else {
+          // If we can't find JSON properly, log and throw
+          console.error('Could not find valid JSON in GPT response:', cleanedContent);
+          throw new Error('Invalid JSON format in GPT response');
+        }
+      }
+      
+      // Additional safeguard - make sure we only have JSON content
+      cleanedContent = cleanedContent.replace(/^```json\s*/, '')
+                                   .replace(/^```\s*/, '')
+                                   .replace(/\s*```$/, '');
+                                   
+      console.log('Cleaned JSON content for parsing:', cleanedContent.substring(0, 100) + '...');
+      
+      // Parse the cleaned JSON response
+      let colorAnalysis;
+      try {
+        colorAnalysis = JSON.parse(cleanedContent);
+      } catch (jsonError) {
+        console.error('JSON parsing error:', jsonError.message);
+        console.error('Content that failed to parse:', cleanedContent);
+        throw new Error(`Failed to parse color analysis JSON: ${jsonError.message}`);
+      }
+      
+      // Validate and ensure we have the expected structure
+      const validatedAnalysis = {
+        backgroundColor: colorAnalysis.backgroundColor || '#ffffff',
+        backgroundStyle: colorAnalysis.backgroundStyle || 'solid',
+        dominantColors: Array.isArray(colorAnalysis.dominantColors) ? colorAnalysis.dominantColors : ['#000000'],
+        textColors: Array.isArray(colorAnalysis.textColors) ? colorAnalysis.textColors : ['#000000'],
+        accentColors: Array.isArray(colorAnalysis.accentColors) ? colorAnalysis.accentColors : [],
+        colorScheme: colorAnalysis.colorScheme || 'neutral',
+        styleCharacteristics: Array.isArray(colorAnalysis.styleCharacteristics) ? colorAnalysis.styleCharacteristics : ['modern'],
+        hasBackgroundImage: !!colorAnalysis.hasBackgroundImage,
+        backgroundDescription: colorAnalysis.backgroundDescription || '',
+        contrastLevel: colorAnalysis.contrastLevel || 'medium',
+        colorTemperature: colorAnalysis.colorTemperature || 'neutral',
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('🎨 Color analysis completed:', validatedAnalysis);
+      return validatedAnalysis;
+
+    } catch (error) {
+      console.error('Color analysis error:', error);
+      
+      // Provide more diagnostic information
+      let errorDetails = error.message;
+      
+      if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        errorDetails = 'JSON parsing error: Invalid format from GPT response. Check prompt and response handling.';
+      } else if (error.message.includes('fetch')) {
+        errorDetails = 'Network error while contacting OpenAI API. Check connectivity and API key.';
+      }
+      
+      console.log('Detailed error diagnostics:', {
+        errorType: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      // Return default values if analysis fails
+      return {
+        backgroundColor: '#ffffff',
+        backgroundStyle: 'solid',
+        dominantColors: ['#000000', '#ffffff'],
+        textColors: ['#000000'],
+        accentColors: [],
+        colorScheme: 'neutral',
+        styleCharacteristics: ['modern'],
+        hasBackgroundImage: false,
+        backgroundDescription: 'Analysis failed',
+        contrastLevel: 'medium',
+        colorTemperature: 'neutral',
+        error: errorDetails,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }
 
 module.exports = new ImageAnalysisService();
