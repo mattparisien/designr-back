@@ -1,0 +1,74 @@
+{
+  "metadata": {
+    "imagePath": "screenshot.png",
+    "fullImagePath": "/Users/mattparisien/Dropbox/Development/canva-clone/apps/back/assets/screenshot.png",
+    "timestamp": "2025-07-01T11:42:18.274Z",
+    "totalTextBlocks": 5,
+    "totalCharacters": 86,
+    "averageFontSize": 144,
+    "processingInfo": {
+      "ocrEngine": "tesseract.js",
+      "outputFormat": "hOCR",
+      "coordinateSystem": "top-left origin (0,0)",
+      "units": "pixels"
+    }
+  },
+  "ocrResults": [
+    {
+      "text": "Innocap",
+      "x": 1388,
+      "y": 88,
+      "w": 334,
+      "h": 72,
+      "fontPx": 91
+    },
+    {
+      "text": "common\n    misconceptions",
+      "x": 142,
+      "y": 928,
+      "w": 1473,
+      "h": 129,
+      "fontPx": 128
+    },
+    {
+      "text": "about\n    Dedicated\n    Managed",
+      "x": 142,
+      "y": 1097,
+      "w": 1527,
+      "h": 132,
+      "fontPx": 132
+    },
+    {
+      "text": "Account\n    Platforms",
+      "x": 138,
+      "y": 1266,
+      "w": 1079,
+      "h": 109,
+      "fontPx": 135
+    },
+    {
+      "text": "ge",
+      "x": 1433,
+      "y": 1552,
+      "w": 221,
+      "h": 128,
+      "fontPx": 232
+    }
+  ],
+  "statistics": {
+    "textBlocksByFontSize": {
+      "90px": 1,
+      "130px": 2,
+      "135px": 1,
+      "230px": 1
+    },
+    "textBlocksByPosition": {
+      "topHalf": 1,
+      "bottomHalf": 4,
+      "leftHalf": 3,
+      "rightHalf": 2
+    },
+    "longestText": "about\n    Dedicated\n    Managed",
+    "shortestText": "ge"
+  }
+}

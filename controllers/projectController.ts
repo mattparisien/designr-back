@@ -712,7 +712,6 @@ async function vectorizeTemplate(doc: any, isTemplate: boolean = false) {
 export const createProjectFromImage = async (req: any, res: any) => {
   try {
     const { assetId, title, ownerId, type = 'custom', tags = [] } = req.body;
-    console.log('made it here!');
 
     if (!assetId) {
       return res.status(400).json({ message: 'Asset ID is required' });
@@ -736,7 +735,6 @@ export const createProjectFromImage = async (req: any, res: any) => {
     }
 
     // 4️⃣ Run image analysis
-    console.log('before analysis...')
     const analysis = await imageAnalysisService.analyzeImage(imageUrl);
     
     
@@ -749,7 +747,7 @@ export const createProjectFromImage = async (req: any, res: any) => {
 
     // 5️⃣ Prepare layout from analysis
     const analyzedPage = analysis.pages[0]; // Take the first (and likely only) page
-  
+    console.log('elements', analyzedPage.elements)
     
     const layoutPayload = {
       pages: [{

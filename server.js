@@ -53,6 +53,7 @@ const brandRoutes = require('./routes/brands'); // Import brand routes
 const agentRoutes = require('./routes/agent'); // Import agent routes
 const canvasRoutes = require('./routes/canvas'); // Import canvas routes
 const fontRoutes = require('./routes/fonts'); // Import font routes
+const ocrRoutes = require('./routes/ocr'); // Import OCR routes
 
 // Routes
 app.use('/api/projects', projectRoutes);
@@ -66,6 +67,7 @@ app.use('/api/brands', brandRoutes); // Use brand routes
 app.use('/api/agent', agentRoutes); // Use agent routes
 app.use('/api/canvas', canvasRoutes); // Use canvas routes
 app.use('/api/fonts', fontRoutes); // Use font routes
+app.use('/api/ocr', ocrRoutes); // Use OCR routes
 
 // Base route
 app.get('/', (req, res) => {

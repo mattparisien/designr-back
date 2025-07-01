@@ -56,128 +56,111 @@ class ImageAnalysisService {
   }
 
   /* ----------------------- 2. PUBLIC API -------------------------------- */
-async analyzeImage(imageUrl, dims = null) {
-  await this.initialize();
+  async analyzeImage(imageUrl, dims = null) {
+    await this.initialize();
 
-  /* ---------- 1.  Dimensions -------------------------------------------- */
-  if (!dims) dims = await this._getRemoteDims(imageUrl);
+    /* ---------- 1.  Dimensions -------------------------------------------- */
+    if (!dims) dims = await this._getRemoteDims(imageUrl);
 
-  /* ---------- 2.  Kick off GPT-Vision & OCR in parallel ----------------- */
-  const llmPromise = this._callOpenAI(this._buildPrompt(imageUrl, dims));
+    /* ---------- 2.  Kick off GPT-Vision & OCR in parallel ----------------- */
+    const llmPromise = this._callOpenAI(this._buildPrompt(imageUrl, dims));
 
-  const ocrPromise = (this.ocr && typeof this.ocr.detectLines === 'function')
-    ? this.ocr.detectLines(imageUrl).catch(e => {         // swallow OCR errors
+    const ocrPromise = (this.ocr && typeof this.ocr.detectLines === 'function')
+      ? this.ocr.detectLines(imageUrl).catch(e => {         // swallow OCR errors
         console.warn('[OCR] failed => continue without:', e.message);
         return [];                                        // <- must be array
       })
-    : Promise.resolve([]);                                // OCR disabled
+      : Promise.resolve([]);                                // OCR disabled
 
-  const [ocrLinesRaw, llmRaw] = await Promise.all([ocrPromise, llmPromise]);
+    const [ocrLinesRaw, llmRaw] = await Promise.all([ocrPromise, llmPromise]);
 
-  /* ---------- 3.  Parse GPT answer safely ------------------------------- */
-  const parsed = this._safeParseJSON(llmRaw) ?? {};
-  const pages  = Array.isArray(parsed.pages) ? parsed.pages : [];
+    /* ---------- 3.  Parse GPT answer safely ------------------------------- */
+    const parsed = this._safeParseJSON(llmRaw) ?? {};
+    const pages = Array.isArray(parsed.pages) ? parsed.pages : [];
 
-  if (!pages.length) {                                    // still nothing?
-    throw new Error('GPT-Vision did not return a pages[] array');
+    if (!pages.length) {                                    // still nothing?
+      throw new Error('GPT-Vision did not return a pages[] array');
+    }
+
+    const page = pages[0];
+
+    /* ---------- 4.  Normalise/defend arrays ------------------------------- */
+    page.textBlocks = Array.isArray(page.textBlocks) ? page.textBlocks : [];
+    page.shapes = Array.isArray(page.shapes) ? page.shapes : [];
+
+    const ocrLines = Array.isArray(ocrLinesRaw) ? ocrLinesRaw : [];
+
+    /* ---------- 5.  Lower-case colours & merge OCR positioning data ------- */
+    const toHex = c => (c || '').toLowerCase();
+    page.textBlocks = page.textBlocks.map(tb => ({ ...tb, color: toHex(tb.color) }));
+    page.shapes = page.shapes.map(sh => ({
+      ...sh,
+      color: toHex(sh.color),
+      borderColor: toHex(sh.borderColor)
+    }));
+
+    /* ---------- 5.  Build textBlocks purely from OCR ---------------------- */
+    if (ocrLines.length) {
+      // Simple helper for fuzzy string overlap
+      const fuzzy = (a = '', b = '') =>
+        a && b && a.toLowerCase().replace(/\s+/g, '')
+          .includes(b.toLowerCase().replace(/\s+/g, '').slice(0, 30));
+
+      const textBlocksFromOCR = ocrLines
+        .filter(line => line.text?.trim())
+        .map(line => {
+          // find any GPT block with similar text – purely to pick up style attrs
+          const gpt = page.textBlocks.find(tb => fuzzy(line.text, tb.text));
+          
+          const ret =  {
+            text: line.text.trim(),
+            x: line.x,                // ← OCR wins
+            y: line.y,                // ← OCR wins
+            width: line.w || this._estimateTextWidth(line.text.trim(), line.fontPx || 16),
+            height: line.h || Math.round((line.fontPx || 16) * 1.2),
+            fontSizeEstimate: line.fontPx || gpt?.fontSizeEstimate || 16,
+            alignment: gpt?.alignment || 'left',
+            fontWeight: gpt?.fontWeight || 'normal',
+            color: toHex(gpt?.color) || '#000000'
+          };
+
+          console.log('ret', ret);
+
+          return ret;
+        });
+
+      page.textBlocks = textBlocksFromOCR;
+    } else {
+      // No OCR → keep whatever GPT gave, but clear its x/y so they get normalised
+      page.textBlocks.forEach(tb => { tb.x = undefined; tb.y = undefined; });
+    }
+
+
+    /* ---------- 6.  Assign dimensions & normalize positioning ------------- */
+    Object.assign(page, dims || {});
+
+    // Normalize positioning to ensure elements fit within canvas
+    // if (page.width && page.height) {
+    //   page.textBlocks = this._normalizeElementPositions(page.textBlocks, page.width, page.height);
+    //   page.shapes = this._normalizeElementPositions(page.shapes, page.width, page.height);
+    // }
+
+    /* ---------- 7.  Map to element schema --------------------------------- */
+    page.elements = [
+      ...page.textBlocks.map(tb => this._mapTextBlockToElement(tb)),
+      ...page.shapes.map(sh => this._mapShapeToElement(sh))
+    ];
+
+    page.background = this._deriveBackground(page);
+    page.name = page.name || 'Page 1';
+    page.canvas = { width: page.width || 0, height: page.height || 0 };
+
+    /* ---------- 7.  Clean-up & return ------------------------------------- */
+    delete page.textBlocks;
+    delete page.shapes;
+
+    return { pages: [page] };
   }
-
-  const page = pages[0];
-
-  /* ---------- 4.  Normalise/defend arrays ------------------------------- */
-  page.textBlocks = Array.isArray(page.textBlocks) ? page.textBlocks : [];
-  page.shapes     = Array.isArray(page.shapes)     ? page.shapes     : [];
-
-  const ocrLines  = Array.isArray(ocrLinesRaw)    ? ocrLinesRaw     : [];
-  console.log('the ocr lines', ocrLines);
-
-  /* ---------- 5.  Lower-case colours & merge OCR positioning data ------- */
-  const toHex = c => (c || '').toLowerCase();
-  page.textBlocks = page.textBlocks.map(tb => ({ ...tb, color: toHex(tb.color) }));
-  page.shapes     = page.shapes.map(sh => ({
-    ...sh,
-    color:       toHex(sh.color),
-    borderColor: toHex(sh.borderColor)
-  }));
-
-  if (ocrLines.length && page.textBlocks.length) {
-    const δ = 20;                                        // pixel tolerance for matching
-    page.textBlocks.forEach(tb => {
-      // Find OCR line that matches this text block (by position or content)
-      const hit = ocrLines.find(l => {
-        // Try to match by position first
-        const positionMatch = Math.abs(l.x - tb.x) < δ && Math.abs(l.y - tb.y) < δ;
-        // Try to match by text content if position doesn't work
-        const textMatch = l.text && tb.text && 
-          l.text.toLowerCase().includes(tb.text.toLowerCase().substring(0, 10));
-        return positionMatch || textMatch;
-      });
-      
-      if (hit) {
-        console.log(`🔍 OCR Override: "${tb.text}" -> x:${hit.x}, y:${hit.y}, fontPx:${hit.fontPx}`);
-        // Override positioning data from OCR (x, y, fontPx only - let frontend handle width/height)
-        tb.x = hit.x;
-        tb.y = hit.y;
-        tb.fontSizeEstimate = hit.fontPx;
-      }
-    });
-    
-    // Add any OCR-detected text that OpenAI missed
-    const usedOcrLines = new Set();
-    page.textBlocks.forEach(tb => {
-      const hit = ocrLines.find(l => {
-        const positionMatch = Math.abs(l.x - tb.x) < δ && Math.abs(l.y - tb.y) < δ;
-        const textMatch = l.text && tb.text && 
-          l.text.toLowerCase().includes(tb.text.toLowerCase().substring(0, 10));
-        return positionMatch || textMatch;
-      });
-      if (hit) usedOcrLines.add(hit);
-    });
-    
-    // Create text blocks for unused OCR lines
-    const ocrOnlyTextBlocks = ocrLines
-      .filter(line => !usedOcrLines.has(line) && line.text?.trim())
-      .map(line => ({
-        text: line.text.trim(),
-        x: line.x,
-        y: line.y,
-        width: line.w || this._estimateTextWidth(line.text.trim(), line.fontPx || 16),
-        height: line.h || Math.round((line.fontPx || 16) * 1.2), // Line height approximation
-        fontSizeEstimate: line.fontPx,
-        alignment: 'left',
-        fontWeight: 'normal',
-        color: '#000000'  // default color
-      }));
-    
-    page.textBlocks.push(...ocrOnlyTextBlocks);
-    console.log(`📝 Added ${ocrOnlyTextBlocks.length} OCR-only text blocks`);
-  }
-
-  /* ---------- 6.  Assign dimensions & normalize positioning ------------- */
-  Object.assign(page, dims || {});
-  
-  // Normalize positioning to ensure elements fit within canvas
-  if (page.width && page.height) {
-    page.textBlocks = this._normalizeElementPositions(page.textBlocks, page.width, page.height);
-    page.shapes = this._normalizeElementPositions(page.shapes, page.width, page.height);
-  }
-
-  /* ---------- 7.  Map to element schema --------------------------------- */
-  page.elements = [
-    ...page.textBlocks.map(tb => this._mapTextBlockToElement(tb)),
-    ...page.shapes    .map(sh => this._mapShapeToElement(sh))
-  ];
-
-  page.background = this._deriveBackground(page);
-  page.name       = page.name || 'Page 1';
-  page.canvas     = { width: page.width || 0, height: page.height || 0 };
-
-  /* ---------- 7.  Clean-up & return ------------------------------------- */
-  delete page.textBlocks;
-  delete page.shapes;
-
-  return { pages: [page] };
-}
 
 
 
@@ -196,7 +179,7 @@ async analyzeImage(imageUrl, dims = null) {
     // Ensure valid width and height - estimate if not provided
     const estimatedWidth = tb.width || this._estimateTextWidth(tb.text || '', tb.fontSizeEstimate || 16);
     const estimatedHeight = tb.height || Math.round((tb.fontSizeEstimate || 16) * 1.2);
-    
+
     return {
       kind: 'text',
       id: randomUUID(),
@@ -222,7 +205,7 @@ async analyzeImage(imageUrl, dims = null) {
     // Ensure valid width and height for shapes
     const shapeWidth = Math.max(sh.width || 100, 10); // Minimum width of 10px, default 100px
     const shapeHeight = Math.max(sh.height || 100, 10); // Minimum height of 10px, default 100px
-    
+
     return {
       kind: 'shape',
       id: randomUUID(),
@@ -256,17 +239,17 @@ async analyzeImage(imageUrl, dims = null) {
 
     return sortedElements.map((element, index) => {
       const normalized = { ...element };
-      
+
       // Basic bounds checking
       if (normalized.x < 0) normalized.x = 20;
       if (normalized.y < 0) normalized.y = 20;
-      
+
       // Handle elements positioned way outside canvas
       if (normalized.x > canvasWidth * 0.9) {
         console.log(`📍 Element "${normalized.text || normalized.shapeType}" positioned outside canvas (x:${normalized.x})`);
         normalized.x = canvasWidth * 0.1; // Move to 10% from left
       }
-      
+
       if (normalized.y > canvasHeight * 0.9) {
         console.log(`📍 Element "${normalized.text || normalized.shapeType}" positioned outside canvas (y:${normalized.y})`);
         normalized.y = canvasHeight * 0.1; // Move to 10% from top
@@ -282,18 +265,18 @@ async analyzeImage(imageUrl, dims = null) {
       if (normalized.shapeType && normalized.shapeType !== 'background') {
         this._applyShapePositioningRules(normalized, canvasWidth, canvasHeight);
       }
-      
+
       return normalized;
     });
   }
 
   _applyTextPositioningRules(textElement, canvasWidth, canvasHeight, elementIndex, totalElements) {
     const minPadding = Math.max(20, Math.min(canvasWidth, canvasHeight) * 0.02); // 2% of smallest dimension, min 20px
-    
+
     // Rule 1: Fix origin positioning (common AI mistake)
     if (textElement.x <= 5 && textElement.y <= 5) {
       console.log(`📍 Moving text "${textElement.text}" from origin to proper position`);
-      
+
       // For headlines (larger font), center horizontally and place near top
       if ((textElement.fontSizeEstimate || 16) > canvasHeight * 0.05) {
         textElement.x = canvasWidth * 0.1; // 10% from left for headlines
@@ -328,7 +311,7 @@ async analyzeImage(imageUrl, dims = null) {
     // Rule 5: Apply layout patterns based on text characteristics
     const isHeadline = (textElement.fontSizeEstimate || 16) > canvasHeight * 0.04;
     const isShortText = textElement.text.length < 20;
-    
+
     if (isHeadline && isShortText) {
       // Center short headlines horizontally
       const textWidth = this._estimateTextWidth(textElement.text, textElement.fontSizeEstimate || 16);
@@ -342,19 +325,19 @@ async analyzeImage(imageUrl, dims = null) {
 
   _applyShapePositioningRules(shapeElement, canvasWidth, canvasHeight) {
     const minPadding = 10;
-    
+
     // Ensure shapes are within bounds
     if (shapeElement.x < 0) shapeElement.x = minPadding;
     if (shapeElement.y < 0) shapeElement.y = minPadding;
-    
+
     // If shape dimensions extend beyond canvas, adjust
     const shapeWidth = shapeElement.width || 100;
     const shapeHeight = shapeElement.height || 100;
-    
+
     if (shapeElement.x + shapeWidth > canvasWidth) {
       shapeElement.x = Math.max(minPadding, canvasWidth - shapeWidth - minPadding);
     }
-    
+
     if (shapeElement.y + shapeHeight > canvasHeight) {
       shapeElement.y = Math.max(minPadding, canvasHeight - shapeHeight - minPadding);
     }
